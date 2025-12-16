@@ -1,4 +1,1 @@
-
-
-rootProject.name="hello-world"
-
+rootProject.name="realtime-push"

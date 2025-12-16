@@ -1,12 +1,12 @@
+// Plugins to extend Gradle functionality
 plugins {
     id("io.micronaut.application") version "4.6.1"
     id("com.gradleup.shadow") version "8.3.9"
     id("io.micronaut.aot") version "4.6.1"
 }
 
-version = "0.1"
-group = "hello.world"
-
+// Set dependency source and declare required dependencies
+// Classification of dependencies influences whether they are included in the final build artifact
 repositories {
     mavenCentral()
 }
@@ -21,17 +21,19 @@ dependencies {
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
-
-application {
-    mainClass = "hello.world.Application"
-}
+// Compile Java source code with specified compatibility version
 java {
     sourceCompatibility = JavaVersion.toVersion("21")
     targetCompatibility = JavaVersion.toVersion("21")
 }
 
+// Set application artifact details and configure runnable
+version = "0.1"
+group = "hello.world"
 
-graalvmNative.toolchainDetection = false
+application {
+    mainClass = "hello.world.Application"
+}
 
 micronaut {
     runtime("netty")
@@ -54,6 +56,8 @@ micronaut {
     }
 }
 
+// Image generation magic
+graalvmNative.toolchainDetection = false
 
 tasks.named<io.micronaut.gradle.docker.NativeImageDockerfile>("dockerfileNative") {
     jdkVersion = "21"
