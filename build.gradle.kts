@@ -3,6 +3,7 @@ plugins {
     id("io.micronaut.application") version "4.6.1"
     id("com.gradleup.shadow") version "8.3.9"
     id("io.micronaut.aot") version "4.6.1"
+    id("com.google.cloud.tools.jib") version "3.5.2"
     id("checkstyle")
     id("com.diffplug.spotless") version "8.1.0"
 }
@@ -64,6 +65,18 @@ graalvmNative.toolchainDetection = false
 
 tasks.named<io.micronaut.gradle.docker.NativeImageDockerfile>("dockerfileNative") {
     jdkVersion = "21"
+}
+
+jib {
+    from {
+        image = "amazoncorretto:21-al2023-headless"
+    }
+    to {
+        image = "realtime-messaging:latest"
+    }
+    container {
+        ports = listOf("8080")
+    }
 }
 
 // Linting
