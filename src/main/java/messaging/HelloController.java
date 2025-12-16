@@ -8,9 +8,9 @@ import io.micronaut.http.annotation.Produces;
 @Controller("/")
 public class HelloController {
 
-    @Get
-    @Produces(MediaType.TEXT_PLAIN)
-    public String hello() {
-        return "Hello, world";
-    }
+  @Get
+  @Produces(MediaType.TEXT_PLAIN)
+  public String hello() {
+    return "Hello, world";
+  }
 }
