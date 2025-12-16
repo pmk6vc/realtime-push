@@ -27,20 +27,21 @@ java {
     targetCompatibility = JavaVersion.toVersion("21")
 }
 
-// Set application artifact details and configure runnable
+// Set application artifact details and configure application entry point
 version = "0.1"
-group = "hello.world"
+group = "zugzwang-realtime-messaging"
 
 application {
-    mainClass = "hello.world.Application"
+    mainClass = "messaging.Application"
 }
 
+// Micronaut framework specific configurations
 micronaut {
     runtime("netty")
     testRuntime("junit5")
     processing {
         incremental(true)
-        annotations("hello.world.*")
+        annotations("messaging.*") // Hint on where to look - adjust this as needed to match package structure
     }
     aot {
         // Please review carefully the optimizations enabled below
