@@ -1,1 +1,1 @@
-rootProject.name="realtime-push"
+rootProject.name="realtime-messaging"
