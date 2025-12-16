@@ -5,7 +5,7 @@ on:
     branches: [ main ]
 
 jobs:
-  test-suite:
+  gradle-check:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -23,5 +23,5 @@ jobs:
             ~/.gradle/wrapper
           key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
           restore-keys: ${{ runner.os }}-gradle-
-      - name: Run tests
-        run: ./gradlew test --no-daemon --console=plain
+      - name: Run checks
+        run: ./gradlew clean check --no-daemon --console=plain

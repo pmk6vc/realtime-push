@@ -3,6 +3,8 @@ plugins {
     id("io.micronaut.application") version "4.6.1"
     id("com.gradleup.shadow") version "8.3.9"
     id("io.micronaut.aot") version "4.6.1"
+    id("checkstyle")
+    id("com.diffplug.spotless") version "8.1.0"
 }
 
 // Set dependency source and declare required dependencies
@@ -64,4 +66,16 @@ tasks.named<io.micronaut.gradle.docker.NativeImageDockerfile>("dockerfileNative"
     jdkVersion = "21"
 }
 
+// Linting
+checkstyle {
+    toolVersion = "12.3.0"
+    configFile = file("config/checkstyle/checkstyle.xml")
+    isIgnoreFailures = false
+}
 
+spotless {
+    java {
+        target("src/main/java/**/*.java", "src/test/java/**/*.java")
+        googleJavaFormat("1.17.0")
+    }
+}
