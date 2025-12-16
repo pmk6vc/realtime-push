@@ -1,2 +1,1 @@
-# realtime-push
-Realtime push messaging infrastructure
+Realtime messaging infrastructure
