@@ -70,10 +70,7 @@ tasks.named<io.micronaut.gradle.docker.NativeImageDockerfile>("dockerfileNative"
 checkstyle {
     toolVersion = "12.3.0"
     configFile = file("config/checkstyle/checkstyle.xml")
-}
-
-tasks.named("check") {
-    dependsOn("checkstyleMain", "checkstyleTest")
+    isIgnoreFailures = false
 }
 
 spotless {
