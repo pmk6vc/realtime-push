@@ -1,7 +1,6 @@
 // Plugins to extend Gradle functionality
 plugins {
     id("io.micronaut.application") version "4.6.1"
-    id("com.gradleup.shadow") version "8.3.9"
     id("io.micronaut.aot") version "4.6.1"
     id("com.google.cloud.tools.jib") version "3.5.2"
     id("checkstyle")
@@ -60,23 +59,20 @@ micronaut {
     }
 }
 
-// Image generation magic
-graalvmNative.toolchainDetection = false
-
-tasks.named<io.micronaut.gradle.docker.NativeImageDockerfile>("dockerfileNative") {
-    jdkVersion = "21"
-}
-
+// Docker image generation
 jib {
     from {
-        image = "amazoncorretto:21-al2023-headless"
+        image = "gcr.io/distroless/java21-debian12"
     }
     to {
-        image = "realtime-messaging:latest"
+        image = "realtime-messaging:${project.version}"
     }
     container {
         ports = listOf("8080")
+        creationTime = "USE_CURRENT_TIMESTAMP"
+        jvmFlags = listOf("-XX:MaxRAMPercentage=75.0")
     }
+    containerizingMode = "exploded"
 }
 
 // Linting
