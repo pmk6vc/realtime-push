@@ -65,7 +65,8 @@ jib {
         image = "gcr.io/distroless/java21-debian12"
     }
     to {
-        image = "realtime-messaging:${project.version}"
+        image = "realtime-messaging"
+        tags = setOf(project.version.toString())
     }
     container {
         ports = listOf("8080")
@@ -87,4 +88,18 @@ spotless {
         target("src/main/java/**/*.java", "src/test/java/**/*.java")
         googleJavaFormat("1.17.0")
     }
+}
+
+// Custom scripts to simplify common tasks
+tasks.register<Exec>("dockerBuildPrune") {
+    dependsOn(tasks.named("jibDockerBuild"))
+    commandLine("docker", "image", "prune", "-f")
+}
+
+tasks.register<Exec>("dockerComposeUp") {
+    commandLine("docker", "compose", "up", "-d")
+}
+
+tasks.register<Exec>("dockerComposeDown") {
+    commandLine("docker", "compose", "down")
 }
