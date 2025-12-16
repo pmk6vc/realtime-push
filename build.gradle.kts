@@ -1,8 +1,8 @@
 // Plugins to extend Gradle functionality
 plugins {
     id("io.micronaut.application") version "4.6.1"
-    id("com.gradleup.shadow") version "8.3.9"
     id("io.micronaut.aot") version "4.6.1"
+    id("com.google.cloud.tools.jib") version "3.5.2"
     id("checkstyle")
     id("com.diffplug.spotless") version "8.1.0"
 }
@@ -59,11 +59,21 @@ micronaut {
     }
 }
 
-// Image generation magic
-graalvmNative.toolchainDetection = false
-
-tasks.named<io.micronaut.gradle.docker.NativeImageDockerfile>("dockerfileNative") {
-    jdkVersion = "21"
+// Docker image generation
+jib {
+    from {
+        image = "gcr.io/distroless/java21-debian12"
+    }
+    to {
+        image = "realtime-messaging"
+        tags = setOf(project.version.toString())
+    }
+    container {
+        ports = listOf("8080")
+        creationTime = "USE_CURRENT_TIMESTAMP"
+        jvmFlags = listOf("-XX:MaxRAMPercentage=75.0")
+    }
+    containerizingMode = "exploded"
 }
 
 // Linting
@@ -78,4 +88,18 @@ spotless {
         target("src/main/java/**/*.java", "src/test/java/**/*.java")
         googleJavaFormat("1.17.0")
     }
+}
+
+// Custom scripts to simplify common tasks
+tasks.register<Exec>("dockerBuildPrune") {
+    dependsOn(tasks.named("jibDockerBuild"))
+    commandLine("docker", "image", "prune", "-f")
+}
+
+tasks.register<Exec>("dockerComposeUp") {
+    commandLine("docker", "compose", "up", "-d")
+}
+
+tasks.register<Exec>("dockerComposeDown") {
+    commandLine("docker", "compose", "down")
 }
