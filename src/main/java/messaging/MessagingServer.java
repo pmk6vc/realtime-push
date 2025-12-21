@@ -2,7 +2,6 @@ package messaging;
 
 import io.micronaut.websocket.WebSocketSession;
 import io.micronaut.websocket.annotation.*;
-
 import java.util.Set;
 
 // TODO: Parse JWT for user ID instead of including in path
@@ -35,11 +34,18 @@ public class MessagingServer {
   @OnMessage
   public void onSessionMessage(String message, WebSocketSession session) {
     // TODO: Write message to DB - separate outbox will handle publishing to Kafka for fanout
-    // Messages must be written to DB first - otherwise new clients may join in between fanout and DB write and miss messages
+    // Messages must be written to DB first - otherwise new clients may join in between fanout and
+    // DB write and miss messages
     // For now, just echo back to other users registered on this server
-    // Avoid doing any broadcasting in this method in the steady state - delegate to Kafka fanout instead
+    // Avoid doing any broadcasting in this method in the steady state - delegate to Kafka fanout
+    // instead
     String userId = session.get(ATTR_USER_ID, String.class, null);
-    String payload = "{\"type\":\"message\",\"from\":\"" + userId + "\",\"text\":\"" + escapeJson(message) + "\"}";
+    String payload =
+        "{\"type\":\"message\",\"from\":\""
+            + userId
+            + "\",\"text\":\""
+            + escapeJson(message)
+            + "\"}";
     userConnRegistry.broadcastPayloadWithExclusions(payload, Set.of(userId));
   }
 
@@ -52,9 +58,10 @@ public class MessagingServer {
     }
   }
 
-  public void onKafkaFanoutMessage(String fromUserId, String channelId, String message) {
+  public void onKafkaFanoutMessage(String fromUserId, String channelId, String payload) {
     // TODO: Add Kafka subscription
-    // TODO: Fetch relevant channel members from Redis, exclude sender, and broadcast message
+    // TODO: Fetch relevant channel members from Redis, exclude sender, and broadcast payload to
+    // targets
   }
 
   private static String escapeJson(String s) {
