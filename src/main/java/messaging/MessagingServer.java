@@ -3,6 +3,8 @@ package messaging;
 import io.micronaut.websocket.WebSocketSession;
 import io.micronaut.websocket.annotation.*;
 import java.util.Set;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 // TODO: Parse JWT for user ID instead of including in path
 @ServerWebSocket("/ws/chat/{user}")
@@ -10,6 +12,7 @@ public class MessagingServer {
 
   private static final String ATTR_USER_ID = "userId";
   private final ConnectionRegistry userConnRegistry;
+  private static final Logger LOG = LoggerFactory.getLogger(MessagingServer.class);
 
   public MessagingServer(ConnectionRegistry userConnRegistry) {
     this.userConnRegistry = userConnRegistry;
@@ -20,7 +23,7 @@ public class MessagingServer {
     // TODO: Use data from JWT instead of injecting path param in method
     session.put(ATTR_USER_ID, user);
     userConnRegistry.registerUserSession(user, session);
-    session.sendAsync("{\"type\":\"system\",\"text\":\"connected\",\"userId\":\"" + user + "\"}");
+    LOG.info("WebSocket opened for userId {}: {}", user, session.getId());
   }
 
   @OnClose
@@ -29,6 +32,7 @@ public class MessagingServer {
     if (userId != null) {
       userConnRegistry.removeUserSession(userId, session);
     }
+    LOG.info("WebSocket closed for userId {}: {}", userId, session.getId());
   }
 
   @OnMessage
@@ -53,7 +57,7 @@ public class MessagingServer {
   public void onSessionError(WebSocketSession session, Throwable t) {
     String userId = session.get(ATTR_USER_ID, String.class, null);
     if (userId != null) {
-      // TODO: Log error
+      LOG.error(t.getMessage(), t);
       userConnRegistry.removeUserSession(userId, session);
     }
   }

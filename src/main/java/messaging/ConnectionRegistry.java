@@ -6,26 +6,32 @@ import jakarta.inject.Singleton;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @Singleton
 public class ConnectionRegistry {
 
   private final ConcurrentHashMap<String, WebSocketSession> userSessionMap =
       new ConcurrentHashMap<>();
+  private static final Logger LOG = LoggerFactory.getLogger(ConnectionRegistry.class);
 
   public void registerUserSession(String userId, WebSocketSession session) {
     Optional<WebSocketSession> prevSession =
         Optional.ofNullable(userSessionMap.put(userId, session));
+    LOG.debug("Registered session for userId {}: {}", userId, session.getId());
     prevSession.ifPresent(
         prev -> {
           if (prev != session && prev.isOpen()) {
             prev.close(
                 new CloseReason(CloseReason.NORMAL.getCode(), "Replaced by a new connection"));
+            LOG.info("Closed previous session for userId {}: {}", userId, prev.getId());
           }
         });
   }
 
   public void removeUserSession(String userId, WebSocketSession session) {
+    LOG.debug("Removing session for userId {}: {}", userId, session.getId());
     userSessionMap.remove(userId, session);
   }
 
@@ -36,9 +42,13 @@ public class ConnectionRegistry {
           if (targetUserSet.map(set -> !set.contains(uid)).orElse(false)) return;
           if (excludedUserSet.map(set -> set.contains(uid)).orElse(false)) return;
           if (!registeredSession.isOpen()) return;
-          // TODO: Handle failed send (e.g., log, cleanup)
-          // It's possible that session closed between check and message send
-          registeredSession.sendAsync(payload).exceptionally(ex -> null);
+          registeredSession
+              .sendAsync(payload)
+              .exceptionally(
+                  ex -> {
+                    LOG.error("Failed to send payload to userId {}", uid, ex);
+                    return null;
+                  });
         });
   }
 
