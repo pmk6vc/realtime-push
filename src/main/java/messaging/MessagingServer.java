@@ -86,6 +86,7 @@ public class MessagingServer {
   }
 
   private static String escapeJson(String s) {
+    // TODO: Probably need to have more robust message encoding
     return s.replace("\\", "\\\\").replace("\"", "\\\"");
   }
 }
