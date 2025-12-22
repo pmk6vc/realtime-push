@@ -1,3 +1,10 @@
+import org.gradle.api.tasks.testing.logging.TestExceptionFormat
+import org.gradle.api.tasks.SourceSet
+import org.gradle.api.tasks.SourceSetContainer
+import org.gradle.kotlin.dsl.get
+import org.gradle.kotlin.dsl.getByName
+import org.gradle.kotlin.dsl.creating
+
 // Plugins to extend Gradle functionality
 plugins {
     id("io.micronaut.application") version "4.6.1"
@@ -23,6 +30,9 @@ dependencies {
     runtimeOnly("ch.qos.logback:logback-classic")
     runtimeOnly("org.yaml:snakeyaml")
     testImplementation("io.micronaut:micronaut-http-client")
+    testImplementation("io.projectreactor:reactor-core")
+    testImplementation("org.mockito:mockito-core:5.4.0")
+    testImplementation("org.mockito:mockito-junit-jupiter:5.4.0")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
@@ -62,6 +72,62 @@ micronaut {
     }
 }
 
+// Linting
+checkstyle {
+    toolVersion = "12.3.0"
+    configFile = file("config/checkstyle/checkstyle.xml")
+    isIgnoreFailures = false
+}
+
+spotless {
+    java {
+        target("src/main/java/**/*.java", "src/test/java/**/*.java", "src/integrationTest/java/**/*.java")
+        googleJavaFormat("1.17.0")
+    }
+}
+
+// Integration testing
+val sourceSets = the<SourceSetContainer>()
+val integrationTest by sourceSets.creating {
+    java.srcDir("src/integrationTest/java")
+    resources.srcDir("src/integrationTest/resources")
+    compileClasspath += sourceSets["main"].output + configurations["testRuntimeClasspath"]
+    runtimeClasspath += output + compileClasspath
+}
+
+tasks.register<Test>("integrationTest") {
+    description = "Runs integration tests."
+    group = "verification"
+    testClassesDirs = integrationTest.output.classesDirs
+    classpath = integrationTest.runtimeClasspath
+    shouldRunAfter(tasks.test)
+    useJUnitPlatform()
+    testLogging {
+        events("FAILED", "SKIPPED")
+        exceptionFormat = TestExceptionFormat.FULL
+        showStackTraces = true
+        showCauses = true
+    }
+}
+
+configurations[integrationTest.implementationConfigurationName].extendsFrom(configurations["testImplementation"])
+configurations[integrationTest.runtimeOnlyConfigurationName].extendsFrom(configurations["testRuntimeOnly"])
+configurations[integrationTest.annotationProcessorConfigurationName].extendsFrom(
+    configurations["testAnnotationProcessor"],
+    configurations["annotationProcessor"]
+)
+
+tasks.named("check") {
+    dependsOn(tasks.named("integrationTest"))
+    dependsOn("checkstyleIntegrationTest")
+}
+tasks.test {
+    maxParallelForks = 1
+}
+tasks.named<Test>("integrationTest") {
+    maxParallelForks = 1
+}
+
 // Docker image generation
 jib {
     from {
@@ -77,20 +143,6 @@ jib {
         jvmFlags = listOf("-XX:MaxRAMPercentage=75.0")
     }
     containerizingMode = "exploded"
-}
-
-// Linting
-checkstyle {
-    toolVersion = "12.3.0"
-    configFile = file("config/checkstyle/checkstyle.xml")
-    isIgnoreFailures = false
-}
-
-spotless {
-    java {
-        target("src/main/java/**/*.java", "src/test/java/**/*.java")
-        googleJavaFormat("1.17.0")
-    }
 }
 
 // Custom scripts to simplify common tasks
