@@ -1,27 +1,53 @@
-name: Actions for pull requests to main
+name: PR checks (main)
 
 on:
   pull_request:
     branches: [ main ]
 
+concurrency:
+  group: pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
-  gradle-check:
+  gradle:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
       - name: Set up JDK 21 (Corretto)
         uses: actions/setup-java@v4
         with:
-          distribution: 'corretto'
+          distribution: corretto
           java-version: '21'
-      - name: Cache Gradle
-        uses: actions/cache@v4
+          cache: gradle
+
+      - name: Lint / format
+        run: ./gradlew spotlessCheck checkstyleMain checkstyleTest --no-daemon --console=plain --stacktrace
+
+      - name: Unit tests
+        run: ./gradlew test --no-daemon --console=plain --stacktrace
+
+      - name: Integration tests
+        run: ./gradlew integrationTest --no-daemon --console=plain --stacktrace
+
+      - name: Upload test reports (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
         with:
+          name: test-reports
           path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
-          restore-keys: ${{ runner.os }}-gradle-
-      - name: Run checks
-        run: ./gradlew clean check --no-daemon --console=plain
+            **/build/reports/tests/**
+            **/build/test-results/**
+          if-no-files-found: ignore
+
+      - name: Upload quality reports (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-reports
+          path: |
+            **/build/reports/checkstyle/**
+            **/build/reports/spotless/**
+          if-no-files-found: ignore

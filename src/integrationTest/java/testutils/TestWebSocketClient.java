@@ -1,8 +1,12 @@
-package testing_util;
+package testutils;
 
 import io.micronaut.websocket.CloseReason;
 import io.micronaut.websocket.WebSocketSession;
-import io.micronaut.websocket.annotation.*;
+import io.micronaut.websocket.annotation.ClientWebSocket;
+import io.micronaut.websocket.annotation.OnClose;
+import io.micronaut.websocket.annotation.OnError;
+import io.micronaut.websocket.annotation.OnMessage;
+import io.micronaut.websocket.annotation.OnOpen;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -49,5 +53,4 @@ public abstract class TestWebSocketClient implements AutoCloseable {
       session.close();
     }
   }
-  ;
 }

@@ -1,8 +1,14 @@
-// java
 package messaging;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import io.micronaut.websocket.CloseReason;
 import io.micronaut.websocket.WebSocketSession;
@@ -79,10 +85,7 @@ class ConnectionRegistryTest {
 
   @Test
   void broadcastPayloadWithExclusions_sendsToNonExcludedOpenSessions() {
-    ConnectionRegistry registry = new ConnectionRegistry();
-
     WebSocketSession alice = mock(WebSocketSession.class);
-
     WebSocketSession bob = mock(WebSocketSession.class);
     when(bob.isOpen()).thenReturn(true);
     when(bob.sendAsync(anyString())).thenReturn(CompletableFuture.completedFuture(null));
@@ -94,6 +97,7 @@ class ConnectionRegistryTest {
     WebSocketSession dave = mock(WebSocketSession.class);
     when(dave.isOpen()).thenReturn(false);
 
+    ConnectionRegistry registry = new ConnectionRegistry();
     registry.registerUserSession("alice", alice);
     registry.registerUserSession("bob", bob);
     registry.registerUserSession("carol", carol);
@@ -108,8 +112,6 @@ class ConnectionRegistryTest {
 
   @Test
   void broadcastPayloadToTargets_SendsToTargetOpenSessions() {
-    ConnectionRegistry registry = new ConnectionRegistry();
-
     WebSocketSession alice = mock(WebSocketSession.class);
 
     WebSocketSession bob = mock(WebSocketSession.class);
@@ -123,6 +125,7 @@ class ConnectionRegistryTest {
     WebSocketSession dave = mock(WebSocketSession.class);
     when(dave.isOpen()).thenReturn(false);
 
+    ConnectionRegistry registry = new ConnectionRegistry();
     registry.registerUserSession("alice", alice);
     registry.registerUserSession("bob", bob);
     registry.registerUserSession("carol", carol);
