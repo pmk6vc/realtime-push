@@ -58,6 +58,27 @@ class MessagingServerTest {
   }
 
   @Test
+  void onSessionOpen_registersMultipleUsers() {
+    HttpRequest<?> aliceRequest = mock(HttpRequest.class);
+    WebSocketSession aliceSession = mock(WebSocketSession.class);
+    when(extractor.extract(aliceRequest)).thenReturn(Optional.of(ALICE));
+    when(aliceSession.getId()).thenReturn("sess-alice");
+
+    HttpRequest<?> bobRequest = mock(HttpRequest.class);
+    WebSocketSession bobSession = mock(WebSocketSession.class);
+    when(extractor.extract(bobRequest)).thenReturn(Optional.of(BOB));
+    when(bobSession.getId()).thenReturn("sess-bob");
+
+    server.onSessionOpen(aliceSession, aliceRequest);
+    server.onSessionOpen(bobSession, bobRequest);
+
+    verify(aliceSession).put(eq("userId"), eq(ALICE));
+    verify(bobSession).put(eq("userId"), eq(BOB));
+    verify(registry).registerUserSession(eq(ALICE), eq(aliceSession));
+    verify(registry).registerUserSession(eq(BOB), eq(bobSession));
+  }
+
+  @Test
   void onSessionClose_removesWhenUserKnown() {
     when(session.get(eq("userId"), eq(String.class), isNull())).thenReturn(ALICE);
 
