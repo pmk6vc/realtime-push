@@ -25,7 +25,7 @@ public class ConnectionRegistry {
           if (prev != session && prev.isOpen()) {
             prev.close(
                 new CloseReason(CloseReason.NORMAL.getCode(), "Replaced by a new connection"));
-            LOG.info("Closed previous session for userId {}: {}", userId, prev.getId());
+            LOG.debug("Closed previous session for userId {}: {}", userId, prev.getId());
           }
         });
   }
