@@ -1,8 +1,14 @@
 package messaging;
 
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
+
 import io.micronaut.http.HttpRequest;
 import io.micronaut.websocket.CloseReason;
 import io.micronaut.websocket.WebSocketSession;
+import java.util.Optional;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -10,15 +16,7 @@ import org.mockito.Captor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-
 import util.HeaderUserIdExtractor;
-
-import java.util.Optional;
-import java.util.Set;
-
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class MessagingServerTest {
@@ -32,8 +30,7 @@ class MessagingServerTest {
   @Captor ArgumentCaptor<String> payloadCaptor;
   @Captor ArgumentCaptor<Set<String>> exclusionCaptor;
 
-  @InjectMocks
-  MessagingServer server;
+  @InjectMocks MessagingServer server;
 
   private static final String ALICE = "alice";
   private static final String BOB = "bob";
@@ -85,11 +82,15 @@ class MessagingServerTest {
 
     server.onSessionMessage(raw, session);
 
-    verify(registry).broadcastPayloadWithExclusions(payloadCaptor.capture(), exclusionCaptor.capture());
+    verify(registry)
+        .broadcastPayloadWithExclusions(payloadCaptor.capture(), exclusionCaptor.capture());
 
     // Confirm JSON escaping
     String payload = payloadCaptor.getValue();
-    String expectedPayload = "{\"type\":\"message\",\"from\":\"" + ALICE + "\",\"text\":\"Hello \\\"world\\\" \\\\ test\"}";
+    String expectedPayload =
+        "{\"type\":\"message\",\"from\":\""
+            + ALICE
+            + "\",\"text\":\"Hello \\\"world\\\" \\\\ test\"}";
     assertEquals(payload, expectedPayload);
 
     // Confirm exclusion set
