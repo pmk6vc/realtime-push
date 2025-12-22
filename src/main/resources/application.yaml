@@ -1,0 +1,11 @@
+micronaut:
+  application:
+    name: realtime-messaging
+  server:
+    port: 8080
+
+logger:
+  levels:
+    root: INFO
+    messaging: INFO
+    messaging.ConnectionRegistry: DEBUG
