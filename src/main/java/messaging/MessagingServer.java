@@ -38,6 +38,13 @@ public class MessagingServer {
     String userId = userIdOpt.get();
     session.put(ATTR_USER_ID, userId);
     userConnRegistry.registerUserSession(userId, session);
+    String ackPayload =
+        "{\"type\":\"ack\",\"userId\":\""
+            + userId
+            + "\",\"sessionId\":\""
+            + session.getId()
+            + "\"}";
+    session.sendAsync(ackPayload);
     LOG.info("WebSocket opened for userId {}: {}", userId, session.getId());
   }
 
@@ -81,9 +88,9 @@ public class MessagingServer {
 
   private static String buildPayload(String userId, String message) {
     return "{\"type\":\"message\",\"from\":\""
-            + userId
-            + "\",\"text\":\""
-            + message.replace("\\", "\\\\").replace("\"", "\\\"")
-            + "\"}";
+        + userId
+        + "\",\"text\":\""
+        + message.replace("\\", "\\\\").replace("\"", "\\\"")
+        + "\"}";
   }
 }
