@@ -9,9 +9,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  gradle:
+  lint:
+    name: Lint / format
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -23,24 +23,8 @@ jobs:
           java-version: '21'
           cache: gradle
 
-      - name: Lint / format
-        run: ./gradlew spotlessCheck checkstyleMain checkstyleTest --no-daemon --console=plain --stacktrace
-
-      - name: Unit tests
-        run: ./gradlew test --no-daemon --console=plain --stacktrace
-
-      - name: Integration tests
-        run: ./gradlew integrationTest --no-daemon --console=plain --stacktrace
-
-      - name: Upload test reports (on failure)
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-reports
-          path: |
-            **/build/reports/tests/**
-            **/build/test-results/**
-          if-no-files-found: ignore
+      - name: Spotless + Checkstyle
+        run: ./gradlew spotlessCheck checkstyleMain checkstyleTest checkstyleIntegrationTest --no-daemon --console=plain --stacktrace
 
       - name: Upload quality reports (on failure)
         if: failure()
@@ -50,4 +34,60 @@ jobs:
           path: |
             **/build/reports/checkstyle/**
             **/build/reports/spotless/**
+          if-no-files-found: ignore
+
+  unit-tests:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21 (Corretto)
+        uses: actions/setup-java@v4
+        with:
+          distribution: corretto
+          java-version: '21'
+          cache: gradle
+
+      - name: Run unit tests
+        run: ./gradlew test --no-daemon --console=plain --stacktrace
+
+      - name: Upload unit test reports (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-reports
+          path: |
+            **/build/reports/tests/test/**
+            **/build/test-results/test/**
+          if-no-files-found: ignore
+
+  integration-tests:
+    name: Integration tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21 (Corretto)
+        uses: actions/setup-java@v4
+        with:
+          distribution: corretto
+          java-version: '21'
+          cache: gradle
+
+      - name: Run integration tests
+        run: ./gradlew integrationTest --no-daemon --console=plain --stacktrace
+
+      - name: Upload integration test reports (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-reports
+          path: |
+            **/build/reports/tests/integrationTest/**
+            **/build/test-results/integrationTest/**
+            **/build/reports/tests/**
+            **/build/test-results/**
           if-no-files-found: ignore
