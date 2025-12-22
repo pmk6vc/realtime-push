@@ -45,11 +45,27 @@ class MessagingServerIntegrationTest {
   }
 
   @Test
-  void onSessionOpen_closesWhenNoUserIdPresent() throws Exception {
+  void onSessionOpen_closesWhenMissingUserIdHeader() throws Exception {
     TestWebSocketClient client = connect(chatUri(), null);
-
     CloseReason cr = client.getCloseReasonFuture().get(5, TimeUnit.SECONDS);
     assertEquals(CloseReason.POLICY_VIOLATION.getCode(), cr.getCode());
+  }
+
+  @Test
+  void onSessionOpen_replacesPreexistingSession() throws Exception {
+    TestWebSocketClient firstClient = connect(chatUri(), Map.of(USER_HEADER, "alice"));
+    awaitServerAck(firstClient);
+    TestWebSocketClient secondClient = connect(chatUri(), Map.of(USER_HEADER, "alice"));
+    awaitServerAck(secondClient);
+    try (firstClient;
+        secondClient) {
+      CloseReason cr = firstClient.getCloseReasonFuture().get(5, TimeUnit.SECONDS);
+      assertNotNull(cr, "Expected first client to be closed");
+      assertEquals(CloseReason.NORMAL.getCode(), cr.getCode());
+      assertNull(
+          secondClient.getCloseReasonFuture().getNow(null),
+          "Expected second client to remain open");
+    }
   }
 
   @Test
@@ -58,14 +74,55 @@ class MessagingServerIntegrationTest {
     TestWebSocketClient bobClient = connect(chatUri(), Map.of(USER_HEADER, "bob"));
     awaitServerAck(aliceClient);
     awaitServerAck(bobClient);
+    try (aliceClient;
+        bobClient) {
+      String messageFromAlice = "Hello, Bob!";
+      aliceClient.send(messageFromAlice);
 
-    String messageFromAlice = "Hello, Bob!";
-    aliceClient.send(messageFromAlice);
+      String aliceReceivedMessage = aliceClient.getReceivedMessages().poll(5, TimeUnit.SECONDS);
+      String bobReceivedMessage = bobClient.getReceivedMessages().poll(5, TimeUnit.SECONDS);
+      assertNull(aliceReceivedMessage);
+      assertNotNull(bobReceivedMessage);
+      assertTrue(bobReceivedMessage.contains(messageFromAlice));
+    }
+  }
 
-    String aliceReceivedMessage = aliceClient.getReceivedMessages().poll(5, TimeUnit.SECONDS);
-    String bobReceivedMessage = bobClient.getReceivedMessages().poll(5, TimeUnit.SECONDS);
-    assertNull(aliceReceivedMessage);
-    assertNotNull(bobReceivedMessage);
-    assertTrue(bobReceivedMessage.contains(messageFromAlice));
+  @Test
+  void onMessage_doesNotBroadcastToDisconnectedUsers() throws Exception {
+    TestWebSocketClient aliceClient = connect(chatUri(), Map.of(USER_HEADER, "alice"));
+    TestWebSocketClient bobClient = connect(chatUri(), Map.of(USER_HEADER, "bob"));
+    awaitServerAck(aliceClient);
+    awaitServerAck(bobClient);
+    try (aliceClient;
+        bobClient) {
+      bobClient.close();
+      assertNotNull(bobClient.getCloseReasonFuture().get(5, TimeUnit.SECONDS));
+
+      String messageFromAlice = "Is anyone there?";
+      aliceClient.send(messageFromAlice);
+      assertNull(aliceClient.getReceivedMessages().poll(5, TimeUnit.SECONDS));
+    }
+  }
+
+  @Test
+  void onMessage_messageOrderPreserved() throws Exception {
+    TestWebSocketClient aliceClient = connect(chatUri(), Map.of(USER_HEADER, "alice"));
+    TestWebSocketClient bobClient = connect(chatUri(), Map.of(USER_HEADER, "bob"));
+    awaitServerAck(aliceClient);
+    awaitServerAck(bobClient);
+    try (aliceClient;
+        bobClient) {
+      for (int i = 1; i <= 5; i++) {
+        String message = "Message " + i;
+        aliceClient.send(message);
+      }
+
+      for (int i = 1; i <= 5; i++) {
+        String received = bobClient.getReceivedMessages().poll(5, TimeUnit.SECONDS);
+        assertNotNull(received, "Expected message " + i + " but got none");
+        assertTrue(
+            received.contains("Message " + i), "Expected message " + i + " but got: " + received);
+      }
+    }
   }
 }

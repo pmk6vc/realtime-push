@@ -1,10 +1,8 @@
 package testing_util;
 
 import io.micronaut.websocket.CloseReason;
-import io.micronaut.websocket.annotation.ClientWebSocket;
-import io.micronaut.websocket.annotation.OnClose;
-import io.micronaut.websocket.annotation.OnError;
-import io.micronaut.websocket.annotation.OnMessage;
+import io.micronaut.websocket.WebSocketSession;
+import io.micronaut.websocket.annotation.*;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -14,6 +12,12 @@ public abstract class TestWebSocketClient implements AutoCloseable {
 
   private final BlockingQueue<String> receivedMessages = new LinkedBlockingQueue<>();
   private final CompletableFuture<CloseReason> closeReasonFuture = new CompletableFuture<>();
+  private volatile WebSocketSession session;
+
+  @OnOpen
+  void onOpen(WebSocketSession session) {
+    this.session = session;
+  }
 
   @OnMessage
   void onMessage(String message) {
@@ -40,5 +44,10 @@ public abstract class TestWebSocketClient implements AutoCloseable {
 
   public abstract void send(String message);
 
-  public abstract void close();
+  public void close() {
+    if (session != null && session.isOpen()) {
+      session.close();
+    }
+  }
+  ;
 }
