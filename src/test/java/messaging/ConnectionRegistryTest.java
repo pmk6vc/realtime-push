@@ -12,6 +12,9 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.concurrent.CompletableFuture;
+import java.util.Set;
+
 @ExtendWith(MockitoExtension.class)
 class ConnectionRegistryTest {
 
@@ -33,5 +36,37 @@ class ConnectionRegistryTest {
     CloseReason cr = closeReasonCaptor.getValue();
     assertEquals(CloseReason.NORMAL.getCode(), cr.getCode());
     assertTrue(cr.getReason().toLowerCase().contains("replaced"));
+  }
+
+  @Test
+  void broadcastPayloadWithExclusions_sendsToNonExcludedOpenSessions() {
+    ConnectionRegistry registry = new ConnectionRegistry();
+
+    // excluded user (should NOT receive)
+    WebSocketSession alice = mock(WebSocketSession.class);
+    when(alice.getId()).thenReturn("s-alice");
+    registry.registerUserSession("alice", alice);
+
+    // target user 1 (should receive)
+    WebSocketSession bob = mock(WebSocketSession.class);
+    when(bob.getId()).thenReturn("s-bob");
+    when(bob.isOpen()).thenReturn(true);
+    when(bob.sendAsync(anyString())).thenReturn(CompletableFuture.completedFuture(null));
+    registry.registerUserSession("bob", bob);
+
+    // target user 2 (closed - should NOT receive)
+    WebSocketSession dave = mock(WebSocketSession.class);
+    when(dave.getId()).thenReturn("s-dave");
+    when(dave.isOpen()).thenReturn(false);
+    registry.registerUserSession("dave", dave);
+
+    String payload = "{\"type\":\"test\",\"text\":\"hello\"}";
+
+    // broadcast excluding alice; expect only bob (open & not excluded) to receive
+    registry.broadcastPayloadWithExclusions(payload, Set.of("alice"));
+
+    verify(bob, times(1)).sendAsync(payload);
+    verify(alice, never()).sendAsync(anyString());
+    verify(dave, never()).sendAsync(anyString());
   }
 }
