@@ -23,7 +23,7 @@ dependencies {
     runtimeOnly("ch.qos.logback:logback-classic")
     runtimeOnly("org.yaml:snakeyaml")
     testImplementation("io.micronaut:micronaut-http-client")
-    // Mockito for unit tests
+    testImplementation("io.projectreactor:reactor-core")
     testImplementation("org.mockito:mockito-core:5.4.0")
     testImplementation("org.mockito:mockito-junit-jupiter:5.4.0")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")

@@ -6,14 +6,13 @@ import static org.mockito.Mockito.*;
 
 import io.micronaut.websocket.CloseReason;
 import io.micronaut.websocket.WebSocketSession;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
 import org.mockito.junit.jupiter.MockitoExtension;
-
-import java.util.concurrent.CompletableFuture;
-import java.util.Set;
 
 @ExtendWith(MockitoExtension.class)
 class ConnectionRegistryTest {

@@ -61,13 +61,7 @@ public class MessagingServer {
     // Avoid doing any broadcasting in this method in the steady state - delegate to Kafka fanout
     // instead
     String userId = session.get(ATTR_USER_ID, String.class, null);
-    String payload =
-        "{\"type\":\"message\",\"from\":\""
-            + userId
-            + "\",\"text\":\""
-            + escapeJson(message)
-            + "\"}";
-    userConnRegistry.broadcastPayloadWithExclusions(payload, Set.of(userId));
+    userConnRegistry.broadcastPayloadWithExclusions(buildPayload(userId, message), Set.of(userId));
   }
 
   @OnError
@@ -85,8 +79,11 @@ public class MessagingServer {
     // targets
   }
 
-  private static String escapeJson(String s) {
-    // TODO: Probably need to have more robust message encoding
-    return s.replace("\\", "\\\\").replace("\"", "\\\"");
+  private static String buildPayload(String userId, String message) {
+    return "{\"type\":\"message\",\"from\":\""
+            + userId
+            + "\",\"text\":\""
+            + message.replace("\\", "\\\\").replace("\"", "\\\"")
+            + "\"}";
   }
 }

@@ -1,0 +1,44 @@
+package testing_util;
+
+import io.micronaut.websocket.CloseReason;
+import io.micronaut.websocket.annotation.ClientWebSocket;
+import io.micronaut.websocket.annotation.OnClose;
+import io.micronaut.websocket.annotation.OnError;
+import io.micronaut.websocket.annotation.OnMessage;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.LinkedBlockingQueue;
+
+@ClientWebSocket
+public abstract class TestWebSocketClient implements AutoCloseable {
+
+  private final BlockingQueue<String> receivedMessages = new LinkedBlockingQueue<>();
+  private final CompletableFuture<CloseReason> closeReasonFuture = new CompletableFuture<>();
+
+  @OnMessage
+  void onMessage(String message) {
+    receivedMessages.add(message);
+  }
+
+  @OnClose
+  void onClose(CloseReason reason) {
+    closeReasonFuture.complete(reason);
+  }
+
+  @OnError
+  public void onError(Throwable t) {
+    closeReasonFuture.completeExceptionally(t);
+  }
+
+  public BlockingQueue<String> getReceivedMessages() {
+    return receivedMessages;
+  }
+
+  public CompletableFuture<CloseReason> getCloseReasonFuture() {
+    return closeReasonFuture;
+  }
+
+  public abstract void send(String message);
+
+  public abstract void close();
+}
