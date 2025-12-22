@@ -1,29 +1,44 @@
 package messaging;
 
+import io.micronaut.http.HttpRequest;
+import io.micronaut.websocket.CloseReason;
 import io.micronaut.websocket.WebSocketSession;
 import io.micronaut.websocket.annotation.*;
+import java.util.Optional;
 import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import util.HeaderUserIdExtractor;
 
-// TODO: Parse JWT for user ID instead of including in path
-@ServerWebSocket("/ws/chat/{user}")
+@ServerWebSocket("/chat")
 public class MessagingServer {
 
   private static final String ATTR_USER_ID = "userId";
   private final ConnectionRegistry userConnRegistry;
+  private final HeaderUserIdExtractor headerUserIdExtractor;
   private static final Logger LOG = LoggerFactory.getLogger(MessagingServer.class);
 
-  public MessagingServer(ConnectionRegistry userConnRegistry) {
+  public MessagingServer(
+      ConnectionRegistry userConnRegistry, HeaderUserIdExtractor headerUserIdExtractor) {
     this.userConnRegistry = userConnRegistry;
+    this.headerUserIdExtractor = headerUserIdExtractor;
   }
 
   @OnOpen
-  public void onSessionOpen(String user, WebSocketSession session) {
-    // TODO: Use data from JWT instead of injecting path param in method
-    session.put(ATTR_USER_ID, user);
-    userConnRegistry.registerUserSession(user, session);
-    LOG.info("WebSocket opened for userId {}: {}", user, session.getId());
+  public void onSessionOpen(WebSocketSession session, HttpRequest<?> request) {
+    Optional<String> userIdOpt = headerUserIdExtractor.extract(request);
+    if (userIdOpt.isEmpty()) {
+      LOG.warn("Closing WebSocket session due to missing user ID in headers: {}", session.getId());
+      session.close(
+          new CloseReason(
+              CloseReason.POLICY_VIOLATION.getCode(),
+              "Could not extract valid user ID from request headers"));
+      return;
+    }
+    String userId = userIdOpt.get();
+    session.put(ATTR_USER_ID, userId);
+    userConnRegistry.registerUserSession(userId, session);
+    LOG.info("WebSocket opened for userId {}: {}", userId, session.getId());
   }
 
   @OnClose
@@ -31,8 +46,10 @@ public class MessagingServer {
     String userId = session.get(ATTR_USER_ID, String.class, null);
     if (userId != null) {
       userConnRegistry.removeUserSession(userId, session);
+      LOG.info("WebSocket closed for userId {}: {}", userId, session.getId());
+    } else {
+      LOG.info("WebSocket closed for unknown user: {}", session.getId());
     }
-    LOG.info("WebSocket closed for userId {}: {}", userId, session.getId());
   }
 
   @OnMessage
@@ -62,7 +79,7 @@ public class MessagingServer {
     }
   }
 
-  public void onKafkaFanoutMessage(String fromUserId, String channelId, String payload) {
+  public void onFanoutMessage(String fromUserId, String channelId, String payload) {
     // TODO: Add Kafka subscription
     // TODO: Fetch relevant channel members from Redis, exclude sender, and broadcast payload to
     // targets
