@@ -1,0 +1,98 @@
+static_resources:
+  listeners:
+    - name: listener_8080
+      address:
+        socket_address:
+          address: 0.0.0.0
+          port_value: 8080
+
+      filter_chains:
+        - filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: ingress_http
+
+                # Access logging configuration
+                # WS connections won't be logged until they are closed
+                access_log:
+                  - name: envoy.access_loggers.stdout
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.access_loggers.stream.v3.StdoutAccessLog
+                      log_format:
+                        json_format:
+                          start_time: "%START_TIME%"
+                          method: "%REQ(:METHOD)%"
+                          path: "%REQ(X-ENVOY-ORIGINAL-PATH?:PATH)%"
+                          protocol: "%PROTOCOL%"
+                          response_code: "%RESPONSE_CODE%"
+                          response_flags: "%RESPONSE_FLAGS%"
+                          upstream_cluster: "%UPSTREAM_CLUSTER%"
+                          upstream_host: "%UPSTREAM_HOST%"
+                          duration_ms: "%DURATION%"
+                          x_user_id: "%REQ(x-user-id)%"
+                          upgrade: "%REQ(upgrade)%"
+                          connection: "%REQ(connection)%"
+                          user_agent: "%REQ(user-agent)%"
+
+                # Allow HTTP -> WebSocket upgrades
+                upgrade_configs:
+                  - upgrade_type: websocket
+
+                route_config:
+                  name: messaging_routes
+                  virtual_hosts:
+                    - name: messaging_app
+                      domains: ["*"]
+                      routes:
+                        # WebSocket endpoint: sticky routing by X-User-Id, no timeout
+                        - match: { prefix: "/chat" }
+                          route:
+                            cluster: messaging_ws_cluster
+                            timeout: 0s
+                            hash_policy:
+                              - header:
+                                  header_name: "X-User-Id"
+
+                        # Everything else: normal stateless HTTP load balancing (round robin)
+                        - match: { prefix: "/" }
+                          route:
+                            cluster: messaging_http_cluster
+
+                http_filters:
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+
+  clusters:
+    # Cluster used only for WebSockets (sticky per user)
+    - name: messaging_ws_cluster
+      type: STRICT_DNS
+      connect_timeout: 1s
+      lb_policy: RING_HASH
+      ring_hash_lb_config:
+        minimum_ring_size: 1024
+      load_assignment:
+        cluster_name: messaging_ws_cluster
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: messaging_app
+                      port_value: 8080
+
+    # Cluster used for normal HTTP (stateless, simple LB)
+    - name: messaging_http_cluster
+      type: STRICT_DNS
+      connect_timeout: 1s
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: messaging_http_cluster
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: messaging_app
+                      port_value: 8080
