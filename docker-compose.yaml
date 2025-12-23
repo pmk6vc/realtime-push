@@ -14,7 +14,7 @@ services:
       ENVOY_PORT: ${ENVOY_PORT}
       ENVOY_ADMIN_PORT: ${ENVOY_ADMIN_PORT}
     volumes:
-      - ./envoy.local.yaml.template:/etc/envoy/envoy.yaml.template:ro
+      - ./envoy.local.template.yaml:/etc/envoy/envoy.template.yaml:ro
       - ./envoy-entrypoint.sh:/entrypoint.sh:ro
     entrypoint: ["/bin/sh", "/entrypoint.sh"]
     networks: [messaging_network]

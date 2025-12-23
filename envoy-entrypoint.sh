@@ -5,7 +5,7 @@ set -eu
 : "${MESSAGING_APP_HOST:?Must set MESSAGING_APP_HOST}"
 : "${MESSAGING_APP_PORT:?Must set MESSAGING_APP_PORT}"
 
-envsubst < /etc/envoy/envoy.yaml.template > /etc/envoy/envoy.yaml
+envsubst < /etc/envoy/envoy.template.yaml > /etc/envoy/envoy.yaml
 
 echo "=== Rendered /etc/envoy/envoy.yaml ==="
 sed -n '1,200p' /etc/envoy/envoy.yaml
