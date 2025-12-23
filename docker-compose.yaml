@@ -13,6 +13,6 @@ services:
   messaging_app:
     image: realtime-messaging:latest
     expose:
-      - "8080"
+      - "${MESSAGING_APP_PORT}"
     environment:
       - MICRONAUT_ENVIRONMENTS=dev
