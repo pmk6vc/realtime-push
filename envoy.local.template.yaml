@@ -4,7 +4,7 @@ static_resources:
       address:
         socket_address:
           address: 0.0.0.0
-          port_value: ${ENVOY_PORT}
+          port_value: ${ENVOY_LISTENER_PORT}
 
       filter_chains:
         - filters:
@@ -102,4 +102,4 @@ admin:
   address:
     socket_address:
       address: 0.0.0.0
-      port_value: ${ENVOY_ADMIN_PORT}
+      port_value: ${ENVOY_ADMIN_LISTENER_PORT}
