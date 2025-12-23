@@ -6,13 +6,11 @@ services:
     depends_on:
       - messaging_app
     ports:
-      - "${ENVOY_PORT}:${ENVOY_LISTENER_PORT}"
-      - "${ENVOY_ADMIN_PORT}:${ENVOY_ADMIN_LISTENER_PORT}"
+      - "${ENVOY_PORT}:10000"
+      - "${ENVOY_ADMIN_PORT}:9901"
     environment:
       MESSAGING_APP_HOST: ${MESSAGING_APP_HOST}
       MESSAGING_APP_PORT: ${MESSAGING_APP_PORT}
-      ENVOY_LISTENER_PORT: ${ENVOY_LISTENER_PORT}
-      ENVOY_ADMIN_LISTENER_PORT: ${ENVOY_ADMIN_LISTENER_PORT}
     volumes:
       - ./envoy.local.template.yaml:/etc/envoy/envoy.template.yaml:ro
       - ./envoy-entrypoint.sh:/entrypoint.sh:ro
