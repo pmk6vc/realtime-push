@@ -30,7 +30,7 @@ static_resources:
                           upstream_cluster: "%UPSTREAM_CLUSTER%"
                           upstream_host: "%UPSTREAM_HOST%"
                           duration_ms: "%DURATION%"
-                          x_user_id: "%REQ(x-user-id)%"
+                          x_user_id: "%REQ(X-User-Id)%"
                           upgrade: "%REQ(upgrade)%"
                           connection: "%REQ(connection)%"
                           user_agent: "%REQ(user-agent)%"

@@ -152,7 +152,7 @@ tasks.register<Exec>("dockerBuildPrune") {
 }
 
 tasks.register<Exec>("dockerComposeUp") {
-    commandLine("docker", "compose", "up", "-d")
+    commandLine("docker", "compose", "up", "-d", "--scale", "messaging_app=3")
 }
 
 tasks.register<Exec>("dockerComposeDown") {
