@@ -1,8 +1,6 @@
 micronaut:
   application:
     name: realtime-messaging
-  server:
-    port: ${MESSAGING_APP_PORT:8080}
 
 logger:
   levels:
