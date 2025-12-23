@@ -1,18 +1,31 @@
-version: "3.8"
 services:
   envoy:
-    image: envoyproxy/envoy:v1.33-latest
-    ports:
-      - "3000:8080"
-      - "9901:9901"
-    volumes:
-      - ./envoy.local.yaml:/etc/envoy/envoy.yaml:ro
+    build:
+      context: .
+      dockerfile: envoy.dockerfile
     depends_on:
       - messaging_app
+    ports:
+      - "${ENVOY_PORT}:10000"
+      - "${ENVOY_ADMIN_PORT}:9901"
+    environment:
+      MESSAGING_APP_HOST: ${MESSAGING_APP_HOST}
+      MESSAGING_APP_PORT: ${MESSAGING_APP_PORT}
+    volumes:
+      - ./envoy.local.template.yaml:/etc/envoy/envoy.template.yaml:ro
+      - ./envoy-entrypoint.sh:/entrypoint.sh:ro
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
+    networks: [messaging_network]
 
   messaging_app:
     image: realtime-messaging:latest
-    expose:
-      - "8080"
     environment:
       - MICRONAUT_ENVIRONMENTS=dev
+      - MICRONAUT_SERVER_HOST=0.0.0.0
+      - MICRONAUT_SERVER_PORT=${MESSAGING_APP_PORT}
+    expose:
+      - "${MESSAGING_APP_PORT}"
+    networks: [messaging_network]
+
+networks:
+  messaging_network:

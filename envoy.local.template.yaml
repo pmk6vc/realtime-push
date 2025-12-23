@@ -1,10 +1,10 @@
 static_resources:
   listeners:
-    - name: listener_8080
+    - name: listener_main
       address:
         socket_address:
           address: 0.0.0.0
-          port_value: 8080
+          port_value: 10000
 
       filter_chains:
         - filters:
@@ -12,9 +12,9 @@ static_resources:
               typed_config:
                 "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
                 stat_prefix: ingress_http
+                codec_type: AUTO
 
-                # Access logging configuration
-                # WS connections won't be logged until they are closed
+                # WS connections won't be logged until they close.
                 access_log:
                   - name: envoy.access_loggers.stdout
                     typed_config:
@@ -79,8 +79,8 @@ static_resources:
               - endpoint:
                   address:
                     socket_address:
-                      address: messaging_app
-                      port_value: 8080
+                      address: ${MESSAGING_APP_HOST}
+                      port_value: ${MESSAGING_APP_PORT}
 
     # Cluster used for normal HTTP (stateless, simple LB)
     - name: messaging_http_cluster
@@ -94,5 +94,12 @@ static_resources:
               - endpoint:
                   address:
                     socket_address:
-                      address: messaging_app
-                      port_value: 8080
+                      address: ${MESSAGING_APP_HOST}
+                      port_value: ${MESSAGING_APP_PORT}
+
+admin:
+  access_log_path: /tmp/admin_access.log
+  address:
+    socket_address:
+      address: 0.0.0.0
+      port_value: 9901
