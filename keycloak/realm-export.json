@@ -5,7 +5,6 @@
   "registrationAllowed": false,
   "loginWithEmailAllowed": true,
   "duplicateEmailsAllowed": false,
-
   "clients": [
     {
       "clientId": "chat-frontend",
@@ -15,17 +14,6 @@
       "directAccessGrantsEnabled": true,
       "redirectUris": ["http://localhost:3000/*"],
       "webOrigins": ["http://localhost:3000"]
-    }
-  ],
-
-  "users": [
-    {
-      "username": "alice",
-      "enabled": true,
-      "emailVerified": true,
-      "credentials": [
-        { "type": "password", "value": "alice", "temporary": false }
-      ]
     }
   ]
 }
