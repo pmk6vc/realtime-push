@@ -45,11 +45,6 @@ static_resources:
                     - name: messaging_app
                       domains: ["*"]
                       routes:
-                        # Optional: allow liveness without auth
-                        - match: { prefix: "/health" }
-                          route:
-                            cluster: messaging_http_cluster
-
                         # WebSocket endpoint: sticky routing by X-User-Id, no timeout
                         - match: { prefix: "/chat" }
                           route:
@@ -121,14 +116,6 @@ static_resources:
                           if user_id ~= nil then
                             handle:headers():replace("x-user-id", tostring(user_id))
                           end
-
-                          -- Optional forwarding (uncomment if you want)
-                          -- if payload["email"] ~= nil then
-                          --   handle:headers():replace("x-user-email", tostring(payload["email"]))
-                          -- end
-                          -- if payload["preferred_username"] ~= nil then
-                          --   handle:headers():replace("x-user-name", tostring(payload["preferred_username"]))
-                          -- end
                         end
 
                   - name: envoy.filters.http.router
