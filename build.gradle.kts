@@ -146,13 +146,13 @@ jib {
 }
 
 // Custom scripts to simplify common tasks
-tasks.register<Exec>("dockerBuildPrune") {
+tasks.register<Exec>("dockerPrune") {
     dependsOn(tasks.named("jibDockerBuild"))
-    commandLine("docker", "image", "prune", "-f")
+    commandLine("docker", "system", "prune", "--all", "-f")
 }
 
 tasks.register<Exec>("dockerComposeUp") {
-    commandLine("docker", "compose", "up", "-d", "--scale", "messaging_app=3")
+    commandLine("docker", "compose", "up", "-d", "--force-recreate", "--scale", "messaging_app=3")
 }
 
 tasks.register<Exec>("dockerComposeDown") {

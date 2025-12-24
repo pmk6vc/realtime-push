@@ -1,0 +1,23 @@
+{
+  "realm": "chat",
+  "users": [
+    {
+      "username": "alice",
+      "email": "alice@example.com",
+      "firstName": "Alice",
+      "lastName": "Test",
+      "enabled": true,
+      "emailVerified": true,
+      "password": { "value": "alice!", "temporary": false }
+    },
+    {
+      "username": "bob",
+      "email": "bob@example.com",
+      "firstName": "Bob",
+      "lastName": "Doe",
+      "enabled": true,
+      "emailVerified": true,
+      "password": { "value": "bob!", "temporary": false }
+    }
+  ]
+}
