@@ -1,3 +1,11 @@
+# Required env vars:
+#   KC_ISSUER            e.g. http://localhost:18080/realms/chat  (must match JWT "iss")
+#   KC_JWKS_URI          e.g. http://keycloak:8080/realms/chat/protocol/openid-connect/certs
+#   KC_JWKS_HOST         e.g. keycloak
+#   KC_JWKS_PORT         e.g. 8080
+#   UPSTREAM_HOST        e.g. messaging_app  (or host.testcontainers.internal in tests)
+#   UPSTREAM_PORT        e.g. 8080
+
 static_resources:
   listeners:
     - name: listener_main
@@ -60,27 +68,23 @@ static_resources:
                             cluster: messaging_http_cluster
 
                 http_filters:
-                  # 1) Verify JWT with Keycloak (reject if missing/invalid)
+                  # 1) Verify JWT (reject if missing/invalid)
                   - name: envoy.filters.http.jwt_authn
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.jwt_authn.v3.JwtAuthentication
                       providers:
                         keycloak_chat:
-                          # Must match the token's `iss` exactly (what the browser hits)
-                          issuer: "http://localhost:${KC_HOST_PORT}/realms/chat"
-
-                          # Put verified payload into dynamic metadata for Lua to read
+                          issuer: "${KC_ISSUER}"
                           payload_in_metadata: "jwt_payload"
 
                           remote_jwks:
                             http_uri:
-                              # Envoy (in Docker network) can reach Keycloak via service name
-                              uri: "http://keycloak:8080/realms/chat/protocol/openid-connect/certs"
+                              uri: "${KC_JWKS_URI}"
                               cluster: keycloak_jwks
                               timeout: 2s
                             cache_duration: 600s
 
-                          # Keep original Authorization header for Micronaut (optional)
+                          # Keep original Authorization header for upstream (optional)
                           forward: true
 
                       rules:
@@ -101,19 +105,15 @@ static_resources:
                         function envoy_on_request(handle)
                           local md = handle:streamInfo():dynamicMetadata()
                           local jwt_md = md:get("envoy.filters.http.jwt_authn")
-                          if jwt_md == nil then
-                            return
-                          end
+                          if jwt_md == nil then return end
 
-                          -- jwt_authn writes payload under the key you set in payload_in_metadata
                           local payload = jwt_md["jwt_payload"]
-                          if payload == nil then
-                            return
-                          end
+                          if payload == nil then return end
 
-                          -- Use `sub` for stable unique id; fall back to preferred_username if needed
+                          -- Stable unique id for hashing; fallback to preferred_username if present.
                           local user_id = payload["sub"] or payload["preferred_username"]
                           if user_id ~= nil then
+                            -- Always overwrite to prevent client spoofing.
                             handle:headers():replace("x-user-id", tostring(user_id))
                           end
                         end
@@ -137,8 +137,8 @@ static_resources:
               - endpoint:
                   address:
                     socket_address:
-                      address: ${MESSAGING_APP_HOST}
-                      port_value: ${MESSAGING_APP_PORT}
+                      address: ${UPSTREAM_HOST}
+                      port_value: ${UPSTREAM_PORT}
 
     # Cluster used for normal HTTP (stateless, simple LB)
     - name: messaging_http_cluster
@@ -152,10 +152,10 @@ static_resources:
               - endpoint:
                   address:
                     socket_address:
-                      address: ${MESSAGING_APP_HOST}
-                      port_value: ${MESSAGING_APP_PORT}
+                      address: ${UPSTREAM_HOST}
+                      port_value: ${UPSTREAM_PORT}
 
-    # Envoy fetches JWKS from Keycloak over the compose network
+    # Cluster used for fetching JWKS (Keycloak public keys)
     - name: keycloak_jwks
       type: STRICT_DNS
       connect_timeout: 2s
@@ -166,8 +166,8 @@ static_resources:
               - endpoint:
                   address:
                     socket_address:
-                      address: keycloak
-                      port_value: 8080
+                      address: ${KC_JWKS_HOST}
+                      port_value: ${KC_JWKS_PORT}
 
 admin:
   access_log_path: /tmp/admin_access.log
