@@ -56,6 +56,7 @@ services:
     environment:
       MESSAGING_APP_HOST: ${MESSAGING_APP_HOST}
       MESSAGING_APP_PORT: ${MESSAGING_APP_PORT}
+      KC_HOST_PORT: ${KC_HOST_PORT}
     volumes:
       - ./envoy.local.template.yaml:/etc/envoy/envoy.template.yaml:ro
       - ./envoy-entrypoint.sh:/entrypoint.sh:ro
