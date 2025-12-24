@@ -54,23 +54,30 @@ services:
       - "${ENVOY_PORT}:10000"
       - "${ENVOY_ADMIN_PORT}:9901"
     environment:
-      MESSAGING_APP_HOST: ${MESSAGING_APP_HOST}
-      MESSAGING_APP_PORT: ${MESSAGING_APP_PORT}
-      KC_HOST_PORT: ${KC_HOST_PORT}
+      # Upstream
+      UPSTREAM_HOST: ${UPSTREAM_HOST}
+      UPSTREAM_PORT: ${UPSTREAM_PORT}
+
+      # Keycloak JWT verification
+      KC_ISSUER: ${KC_ISSUER}
+      KC_JWKS_URI: ${KC_JWKS_URI}
+      KC_JWKS_HOST: ${KC_JWKS_HOST}
+      KC_JWKS_PORT: ${KC_JWKS_PORT}
     volumes:
-      - ./envoy/envoy.local.template.yaml:/etc/envoy/envoy.template.yaml:ro
+      - ./envoy/envoy.template.yaml:/etc/envoy/envoy.template.yaml:ro
       - ./envoy/envoy-entrypoint.sh:/entrypoint.sh:ro
-    entrypoint: ["/bin/sh", "/entrypoint.sh"]
+    entrypoint: [ "/bin/sh", "/entrypoint.sh" ]
     networks: [ messaging_network ]
+
 
   messaging_app:
     image: realtime-messaging:latest
     environment:
       - MICRONAUT_ENVIRONMENTS=dev
       - MICRONAUT_SERVER_HOST=0.0.0.0
-      - MICRONAUT_SERVER_PORT=${MESSAGING_APP_PORT}
+      - MICRONAUT_SERVER_PORT=${UPSTREAM_PORT}
     expose:
-      - "${MESSAGING_APP_PORT}"
+      - "${UPSTREAM_PORT}"
     networks: [ messaging_network ]
 
 networks:
