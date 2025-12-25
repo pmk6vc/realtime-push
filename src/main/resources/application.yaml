@@ -1,6 +1,12 @@
 micronaut:
   application:
     name: realtime-messaging
+endpoints:
+  all:
+    enabled: true
+  health:
+    enabled: true
+    sensitive: false
 
 logger:
   levels:

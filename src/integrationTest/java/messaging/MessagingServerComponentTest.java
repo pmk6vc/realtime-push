@@ -26,7 +26,7 @@ import reactor.core.publisher.Flux;
 import testutils.TestWebSocketClient;
 
 @MicronautTest
-class MessagingServerIntegrationTest {
+class MessagingServerComponentTest {
 
   @Inject EmbeddedServer server;
   @Inject WebSocketClient wsClient;

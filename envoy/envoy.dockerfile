@@ -1,4 +1,4 @@
-FROM envoyproxy/envoy:v1.33-latest
+FROM envoyproxy/envoy:v1.33.14
 
 # Install envsubst (gettext)
 RUN apt-get update \
