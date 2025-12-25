@@ -2,18 +2,19 @@ package testutils;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.micronaut.context.ApplicationContext;
+import io.micronaut.runtime.server.EmbeddedServer;
 import okhttp3.*;
 import okhttp3.MediaType;
 import org.junit.jupiter.api.*;
-import org.testcontainers.containers.*;
+import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.containers.Network;
+import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
+import org.testcontainers.images.builder.ImageFromDockerfile;
 import org.testcontainers.utility.MountableFile;
 
-import io.micronaut.context.ApplicationContext;
-import io.micronaut.runtime.server.EmbeddedServer;
-
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.time.Duration;
 import java.util.*;
@@ -24,8 +25,9 @@ import static org.junit.jupiter.api.Assertions.*;
 public class TestIntegrationWrapper {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
+
     private final OkHttpClient http = new OkHttpClient.Builder()
-            .callTimeout(Duration.ofSeconds(15))
+            .callTimeout(Duration.ofSeconds(20))
             .build();
 
     private Network network;
@@ -54,6 +56,7 @@ public class TestIntegrationWrapper {
 
         // --- Start Keycloak + Postgres ---
         network = Network.newNetwork();
+
         kcDb = new PostgreSQLContainer<>("postgres:16")
                 .withNetwork(network)
                 .withNetworkAliases("keycloak-db")
@@ -62,6 +65,7 @@ public class TestIntegrationWrapper {
                 .withPassword("keycloak")
                 .waitingFor(Wait.forListeningPort());
         kcDb.start();
+
         keycloak = new GenericContainer<>("quay.io/keycloak/keycloak:26.4.7")
                 .withNetwork(network)
                 .withNetworkAliases("keycloak")
@@ -76,29 +80,53 @@ public class TestIntegrationWrapper {
                 ))
                 .withCommand("start-dev", "--http-port=8080", "--hostname-strict=false")
                 .waitingFor(Wait.forHttp("/").forPort(8080).withStartupTimeout(Duration.ofMinutes(2)));
+
         keycloak.start();
         keycloakBaseUrl = "http://" + keycloak.getHost() + ":" + keycloak.getMappedPort(8080);
 
         // --- Configure Keycloak via Admin API (realm + client + user) ---
-        String adminToken = getAdminToken("admin", "admin");
+        String adminToken = getAdminToken(keycloakBaseUrl, "admin", "admin");
         ensureRealm(adminToken);
         ensurePublicClient(adminToken);
         createUserWithPassword(adminToken, "alice", "alice!");
         createUserWithPassword(adminToken, "bob", "bob!");
 
-        // --- Render Envoy config from your repo template and start Envoy ---
-        Path renderedEnvoy = renderEnvoyConfig();
-
-        envoy = new GenericContainer<>("envoyproxy/envoy:v1.32-latest")
+        // --- Start Envoy ---
+        String issuer = keycloakBaseUrl + "/realms/" + REALM;
+        String jwksUri = "http://keycloak:8080/realms/" + REALM + "/protocol/openid-connect/certs";
+        Path projectRoot = Paths.get("").toAbsolutePath().normalize();
+        Path envoyDir = projectRoot.resolve("envoy");
+        ImageFromDockerfile envoyImage = new ImageFromDockerfile()
+                .withFileFromPath(".", envoyDir)
+                .withDockerfile(envoyDir.resolve("envoy.dockerfile"));
+        envoy = new GenericContainer<>(envoyImage)
                 .withNetwork(network)
+                .withNetworkAliases("envoy")
                 .withExposedPorts(10000, 9901)
-                .withCopyFileToContainer(MountableFile.forHostPath(renderedEnvoy), "/etc/envoy/envoy.yaml")
-                // allow container to reach host JVM (Micronaut app)
                 .withExtraHost("host.testcontainers.internal", "host-gateway")
-                .withCommand("-c", "/etc/envoy/envoy.yaml", "--log-level", "info")
-                .waitingFor(Wait.forHttp("/ready").forPort(9901).withStartupTimeout(Duration.ofMinutes(1)));
-        envoy.start();
-
+                .withCopyFileToContainer(
+                        MountableFile.forHostPath(envoyDir.resolve("envoy.template.yaml")),
+                        "/etc/envoy/envoy.template.yaml"
+                )
+                .withEnv("KC_ISSUER", issuer)
+                .withEnv("KC_JWKS_URI", jwksUri)
+                .withEnv("KC_JWKS_HOST", "keycloak")
+                .withEnv("KC_JWKS_PORT", "8080")
+                .withEnv("UPSTREAM_HOST", "host.testcontainers.internal")
+                .withEnv("UPSTREAM_PORT", Integer.toString(app.getPort()))
+                .withEnv("ENVOY_LISTEN_PORT", "10000")
+                .withEnv("ENVOY_ADMIN_PORT", "9901")
+                .withStartupAttempts(1)
+                .waitingFor(Wait.forHttp("/server_info").forPort(9901).withStartupTimeout(Duration.ofMinutes(2)));
+        try {
+            envoy.start();
+        } catch (Exception e) {
+            System.err.println("=== Envoy failed to start ===");
+            if (envoy != null) {
+                System.err.println(envoy.getLogs());
+            }
+            throw e;
+        }
         envoyBaseUrl = "http://" + envoy.getHost() + ":" + envoy.getMappedPort(10000);
     }
 
@@ -112,9 +140,11 @@ public class TestIntegrationWrapper {
         if (ctx != null) ctx.close();
     }
 
-    // -------- Keycloak helpers --------
+    // -------------------------
+    // Keycloak helpers
+    // -------------------------
 
-    private String getAdminToken(String username, String password) throws IOException {
+    private String getAdminToken(String baseUrl, String username, String password) throws IOException {
         RequestBody body = new FormBody.Builder()
                 .add("grant_type", "password")
                 .add("client_id", "admin-cli")
@@ -123,14 +153,21 @@ public class TestIntegrationWrapper {
                 .build();
 
         Request req = new Request.Builder()
-                .url(keycloakBaseUrl + "/realms/master/protocol/openid-connect/token")
+                .url(baseUrl + "/realms/master/protocol/openid-connect/token")
                 .post(body)
                 .build();
 
         try (Response r = http.newCall(req).execute()) {
-            assertEquals(200, r.code(), "admin token failed: " + (r.body() != null ? r.body().string() : ""));
-            JsonNode json = MAPPER.readTree(Objects.requireNonNull(r.body()).string());
-            return json.get("access_token").asText();
+            String respBody = r.body() == null ? "" : r.body().string();
+            if (r.code() != 200) {
+                throw new IllegalStateException("Admin token request failed: HTTP " + r.code() + " body=" + respBody);
+            }
+            JsonNode json = MAPPER.readTree(respBody);
+            JsonNode token = json.get("access_token");
+            if (token == null || token.asText().isBlank()) {
+                throw new IllegalStateException("Admin token missing in response: " + respBody);
+            }
+            return token.asText();
         }
     }
 
@@ -171,22 +208,24 @@ public class TestIntegrationWrapper {
                 .build();
 
         try (Response r = http.newCall(list).execute()) {
-            assertEquals(200, r.code());
-            JsonNode arr = MAPPER.readTree(Objects.requireNonNull(r.body()).string());
+            String body = r.body() == null ? "" : r.body().string();
+            assertEquals(200, r.code(), "List clients failed: " + body);
+
+            JsonNode arr = MAPPER.readTree(body);
             if (arr.isArray() && !arr.isEmpty()) return;
         }
 
         String payload = """
-      {
-        "clientId": "%s",
-        "enabled": true,
-        "publicClient": true,
-        "standardFlowEnabled": true,
-        "directAccessGrantsEnabled": true,
-        "redirectUris": ["http://localhost/*"],
-        "webOrigins": ["*"]
-      }
-      """.formatted(CLIENT_ID);
+          {
+            "clientId": "%s",
+            "enabled": true,
+            "publicClient": true,
+            "standardFlowEnabled": true,
+            "directAccessGrantsEnabled": true,
+            "redirectUris": ["http://localhost/*"],
+            "webOrigins": ["*"]
+          }
+          """.formatted(CLIENT_ID);
 
         Request create = new Request.Builder()
                 .url(keycloakBaseUrl + "/admin/realms/" + REALM + "/clients")
@@ -209,10 +248,11 @@ public class TestIntegrationWrapper {
 
         String userId;
         try (Response r = http.newCall(create).execute()) {
+            String body = r.body() == null ? "" : r.body().string();
             if (r.code() == 409) {
                 userId = lookupUserId(adminToken, username);
             } else {
-                assertEquals(201, r.code(), "user create failed: " + r.code());
+                assertEquals(201, r.code(), "user create failed: " + body);
                 String loc = r.header("Location");
                 assertNotNull(loc);
                 userId = loc.substring(loc.lastIndexOf('/') + 1);
@@ -227,7 +267,8 @@ public class TestIntegrationWrapper {
                 .build();
 
         try (Response r = http.newCall(setPass).execute()) {
-            assertEquals(204, r.code(), "set password failed: " + r.code());
+            String body = r.body() == null ? "" : r.body().string();
+            assertEquals(204, r.code(), "set password failed: " + body);
         }
     }
 
@@ -245,68 +286,27 @@ public class TestIntegrationWrapper {
                 .build();
 
         try (Response r = http.newCall(req).execute()) {
-            assertEquals(200, r.code());
-            JsonNode arr = MAPPER.readTree(Objects.requireNonNull(r.body()).string());
-            assertTrue(arr.isArray() && !arr.isEmpty());
+            String body = r.body() == null ? "" : r.body().string();
+            assertEquals(200, r.code(), "lookup user failed: " + body);
+
+            JsonNode arr = MAPPER.readTree(body);
+            assertTrue(arr.isArray() && !arr.isEmpty(), "user not found: " + username);
             return arr.get(0).get("id").asText();
         }
     }
 
-    private String passwordGrant(String username, String password) throws IOException {
-        RequestBody body = new FormBody.Builder()
-                .add("grant_type", "password")
-                .add("client_id", CLIENT_ID)
-                .add("username", username)
-                .add("password", password)
-                .build();
-
+    // -------------------------
+    // Tests
+    // -------------------------
+    @Test
+    void missingToken_is401() throws Exception {
         Request req = new Request.Builder()
-                .url(keycloakBaseUrl + "/realms/" + REALM + "/protocol/openid-connect/token")
-                .post(body)
+                .url(envoyBaseUrl + "/__test/whoami")
+                .get()
                 .build();
 
         try (Response r = http.newCall(req).execute()) {
-            assertEquals(200, r.code(), "token failed: " + (r.body() != null ? r.body().string() : ""));
-            JsonNode json = MAPPER.readTree(Objects.requireNonNull(r.body()).string());
-            return json.get("access_token").asText();
+            assertEquals(401, r.code());
         }
-    }
-
-    // -------- Envoy config rendering --------
-
-    private Path renderEnvoyConfig() throws IOException {
-        Path templatePath = Paths.get("").toAbsolutePath().resolve("envoy").resolve("envoy.template.yaml").normalize();
-        if (!Files.exists(templatePath)) {
-            throw new IllegalStateException("Envoy template not found at: " + templatePath);
-        }
-        String tpl = Files.readString(templatePath, StandardCharsets.UTF_8);
-
-        // Token issuer will match the base URL used to request tokens
-        String issuer = keycloakBaseUrl + "/realms/" + REALM;
-
-        // Envoy in docker network should fetch JWKS via service alias
-        String jwksUri = "http://keycloak:8080/realms/" + REALM + "/protocol/openid-connect/certs";
-
-        Map<String, String> vars = new LinkedHashMap<>();
-        vars.put("KC_ISSUER", issuer);
-        vars.put("KC_JWKS_URI", jwksUri);
-        vars.put("KC_JWKS_HOST", "keycloak");
-        vars.put("KC_JWKS_PORT", "8080");
-
-        vars.put("UPSTREAM_HOST", "host.testcontainers.internal");
-        vars.put("UPSTREAM_PORT", Integer.toString(app.getPort()));
-
-        String rendered = tpl;
-        for (var e : vars.entrySet()) {
-            rendered = rendered.replace("${" + e.getKey() + "}", e.getValue());
-        }
-
-        if (rendered.contains("${")) {
-            throw new IllegalStateException("Unrendered placeholders remain in envoy config. Check template vars.");
-        }
-
-        Path out = Files.createTempFile("envoy-it-", ".yaml");
-        Files.writeString(out, rendered, StandardCharsets.UTF_8);
-        return out;
     }
 }
