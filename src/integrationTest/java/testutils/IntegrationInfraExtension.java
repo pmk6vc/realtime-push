@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.Closeable;
 import java.io.IOException;
 import java.time.Duration;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 import okhttp3.FormBody;
@@ -101,6 +102,7 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
     private GenericContainer<?> envoy;
 
     private String keycloakBaseUrl;
+    private final Map<String, String> userSubByUsername = new HashMap<>();
     private String envoyBaseUrl;
     private String envoyAdminBaseUrl;
 
@@ -198,14 +200,9 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
               .withEnv("MICRONAUT_ENVIRONMENTS", "test")
               .withEnv("MICRONAUT_SERVER_HOST", "0.0.0.0")
               .withEnv("MICRONAUT_SERVER_PORT", "8080")
-                  .waitingFor(
-                          Wait.forHttp("/health")
-                                  .forPort(8080)
-                                  .withStartupTimeout(Duration.ofMinutes(2))
-                  );
+              .waitingFor(
+                  Wait.forHttp("/health").forPort(8080).withStartupTimeout(Duration.ofMinutes(2)));
       messagingApp.start();
-      System.err.println("=== messaging_app logs ===");
-      System.err.println(messagingApp.getLogs());
 
       // --- Envoy ---
       String issuer = keycloakBaseUrl + "/realms/" + REALM;
@@ -242,33 +239,6 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
     // -------------------------
     // Helpers: tokens + admin API
     // -------------------------
-
-    public String passwordGrant(String username, String password) throws IOException {
-      RequestBody body =
-          new FormBody.Builder()
-              .add("grant_type", "password")
-              .add("client_id", CLIENT_ID)
-              .add("username", username)
-              .add("password", password)
-              .build();
-
-      Request req =
-          new Request.Builder()
-              .url(keycloakBaseUrl + "/realms/" + REALM + "/protocol/openid-connect/token")
-              .post(body)
-              .build();
-
-      try (Response r = http.newCall(req).execute()) {
-        String responseBody = r.body() == null ? "" : r.body().string();
-        Assertions.assertEquals(200, r.code(), "token failed: " + responseBody);
-
-        JsonNode json = MAPPER.readTree(responseBody);
-        JsonNode token = json.get("access_token");
-        Assertions.assertNotNull(token, "access_token missing: " + responseBody);
-        Assertions.assertTrue(!token.asText().isBlank(), "access_token blank: " + responseBody);
-        return token.asText();
-      }
-    }
 
     private String getAdminToken(String username, String password) throws IOException {
       RequestBody body =
@@ -411,6 +381,7 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
           userId = loc.substring(loc.lastIndexOf('/') + 1);
         }
       }
+      userSubByUsername.put(username, userId);
 
       String passPayload =
           "{\"type\":\"password\",\"value\":\"" + password + "\",\"temporary\":false}";
@@ -459,17 +430,6 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
       }
     }
 
-    public String envoyClusters() throws IOException {
-      Request req =
-          new Request.Builder().url(envoyAdminBaseUrl + "/clusters?format=json").get().build();
-
-      try (Response r = http.newCall(req).execute()) {
-        String body = r.body() == null ? "" : r.body().string();
-        Assertions.assertEquals(200, r.code(), "envoy admin /clusters failed: " + body);
-        return body;
-      }
-    }
-
     // -------------------------
     // Teardown (called once)
     // -------------------------
@@ -482,6 +442,63 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
       if (kcDb != null) kcDb.stop();
       if (network != null) network.close();
       if (messagingApp != null) messagingApp.stop();
+    }
+
+    // -------------------------
+    // Public helpers for tests
+    // -------------------------
+
+    public JsonNode readJson(Response r) throws IOException {
+      if (r.body() == null) {
+        throw new IllegalStateException("Response body is null");
+      }
+      return MAPPER.readTree(r.body().string());
+    }
+
+    public String userSub(String username) {
+      String sub = userSubByUsername.get(username);
+      if (sub == null) {
+        throw new IllegalArgumentException("Unknown user: " + username);
+      }
+      return sub;
+    }
+
+    public String passwordGrant(String username, String password) throws IOException {
+      RequestBody body =
+          new FormBody.Builder()
+              .add("grant_type", "password")
+              .add("client_id", CLIENT_ID)
+              .add("username", username)
+              .add("password", password)
+              .build();
+
+      Request req =
+          new Request.Builder()
+              .url(keycloakBaseUrl + "/realms/" + REALM + "/protocol/openid-connect/token")
+              .post(body)
+              .build();
+
+      try (Response r = http.newCall(req).execute()) {
+        String responseBody = r.body() == null ? "" : r.body().string();
+        Assertions.assertEquals(200, r.code(), "token failed: " + responseBody);
+
+        JsonNode json = MAPPER.readTree(responseBody);
+        JsonNode token = json.get("access_token");
+        Assertions.assertNotNull(token, "access_token missing: " + responseBody);
+        Assertions.assertTrue(!token.asText().isBlank(), "access_token blank: " + responseBody);
+        return token.asText();
+      }
+    }
+
+    public String envoyClusters() throws IOException {
+      Request req =
+          new Request.Builder().url(envoyAdminBaseUrl + "/clusters?format=json").get().build();
+
+      try (Response r = http.newCall(req).execute()) {
+        String body = r.body() == null ? "" : r.body().string();
+        Assertions.assertEquals(200, r.code(), "envoy admin /clusters failed: " + body);
+        return body;
+      }
     }
   }
 }

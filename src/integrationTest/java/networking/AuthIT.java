@@ -1,7 +1,9 @@
 package networking;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import okhttp3.Request;
 import okhttp3.Response;
 import org.junit.jupiter.api.Test;
@@ -20,37 +22,25 @@ public class AuthIT extends IntegrationTestBase {
   }
 
   @Test
-  void validToken_is200(IntegrationInfraExtension.Infra infra) throws Exception {
+  void validToken_is200_andUserIdIsInjected(IntegrationInfraExtension.Infra infra)
+      throws Exception {
     String token = infra.passwordGrant("alice", "alice!");
+    String expectedSub = infra.userSub("alice");
     Request req =
         new Request.Builder()
-            .url(infra.envoyBaseUrl() + "/__test/whoami")
+            .url(infra.envoyBaseUrl() + "/")
             .get()
-            .header("Authorization", bearer(token))
+            .header("Authorization", "Bearer " + token)
             .build();
-
     try (Response r = infra.http().newCall(req).execute()) {
-      String body = r.body() == null ? "" : r.body().string();
-      if (r.code() != 200) {
-        System.err.println("=== Envoy /clusters ===");
-        System.err.println(infra.envoyClusters());
-        System.err.println("=== Envoy logs ===");
-        System.err.println(infra.envoyContainer().getLogs());
+      assertEquals(200, r.code());
 
-        throw new AssertionError(
-            "expected 200 but got "
-                + r.code()
-                + "\nbody="
-                + body
-                + "\nserver="
-                + r.header("server")
-                + "\nx-envoy-upstream-service-time="
-                + r.header("x-envoy-upstream-service-time")
-                + "\nvia="
-                + r.header("via")
-                + "\nx-envoy-decorator-operation="
-                + r.header("x-envoy-decorator-operation"));
-      }
+      JsonNode json = infra.readJson(r);
+      assertEquals("hello", json.get("message").asText());
+
+      JsonNode userId = json.get("userId");
+      assertNotNull(userId, "userId missing from response");
+      assertEquals(expectedSub, userId.asText());
     }
   }
 }
