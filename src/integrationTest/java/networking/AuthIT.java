@@ -30,7 +30,27 @@ public class AuthIT extends IntegrationTestBase {
             .build();
 
     try (Response r = infra.http().newCall(req).execute()) {
-      assertEquals(200, r.code());
+      String body = r.body() == null ? "" : r.body().string();
+      if (r.code() != 200) {
+        System.err.println("=== Envoy /clusters ===");
+        System.err.println(infra.envoyClusters());
+        System.err.println("=== Envoy logs ===");
+        System.err.println(infra.envoyContainer().getLogs());
+
+        throw new AssertionError(
+            "expected 200 but got "
+                + r.code()
+                + "\nbody="
+                + body
+                + "\nserver="
+                + r.header("server")
+                + "\nx-envoy-upstream-service-time="
+                + r.header("x-envoy-upstream-service-time")
+                + "\nvia="
+                + r.header("via")
+                + "\nx-envoy-decorator-operation="
+                + r.header("x-envoy-decorator-operation"));
+      }
     }
   }
 }

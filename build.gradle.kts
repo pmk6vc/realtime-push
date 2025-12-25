@@ -133,6 +133,7 @@ tasks.register<Test>("integrationTest") {
 
     maxParallelForks = 1
     dependsOn(buildEnvoyImage)
+    dependsOn(tasks.named("jibDockerBuild"))
 }
 
 tasks.named("check") {
@@ -203,7 +204,7 @@ jib {
     }
     to {
         image = "realtime-messaging"
-        tags = setOf(project.version.toString())
+        tags = setOf(project.version.toString(), "it")
     }
     container {
         ports = listOf("8080")

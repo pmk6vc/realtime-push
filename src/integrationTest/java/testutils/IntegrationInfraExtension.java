@@ -2,8 +2,6 @@ package testutils;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.micronaut.context.ApplicationContext;
-import io.micronaut.runtime.server.EmbeddedServer;
 import java.io.Closeable;
 import java.io.IOException;
 import java.time.Duration;
@@ -96,15 +94,15 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
 
     // Shared infra objects
     private Network network;
-    private ApplicationContext ctx;
-    private EmbeddedServer app;
 
+    private GenericContainer<?> messagingApp;
     private PostgreSQLContainer<?> kcDb;
     private GenericContainer<?> keycloak;
     private GenericContainer<?> envoy;
 
     private String keycloakBaseUrl;
     private String envoyBaseUrl;
+    private String envoyAdminBaseUrl;
 
     private Infra() throws Exception {
       start();
@@ -122,16 +120,20 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
       return MAPPER;
     }
 
-    public EmbeddedServer app() {
-      return app;
-    }
-
     public String keycloakBaseUrl() {
       return keycloakBaseUrl;
     }
 
     public String envoyBaseUrl() {
       return envoyBaseUrl;
+    }
+
+    public String envoyAdminBaseUrl() {
+      return envoyAdminBaseUrl;
+    }
+
+    public GenericContainer<?> messagingAppContainer() {
+      return messagingApp;
     }
 
     public GenericContainer<?> envoyContainer() {
@@ -147,17 +149,10 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
     // -------------------------
 
     private void start() throws Exception {
-      // --- Start Micronaut in-process on random port ---
-      ctx =
-          ApplicationContext.builder()
-              .environments("test")
-              .properties(Map.of("micronaut.server.port", -1))
-              .start();
-      app = ctx.getBean(EmbeddedServer.class).start();
-
-      // --- Start Keycloak + Postgres ---
+      // --- Start network first ---
       network = Network.newNetwork();
 
+      // --- Postgres for Keycloak ---
       kcDb =
           new PostgreSQLContainer<>("postgres:16")
               .withNetwork(network)
@@ -168,6 +163,7 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
               .waitingFor(Wait.forListeningPort().withStartupTimeout(STARTUP_TIMEOUT));
       kcDb.start();
 
+      // --- Keycloak ---
       keycloak =
           new GenericContainer<>("quay.io/keycloak/keycloak:26.4.7")
               .withNetwork(network)
@@ -186,17 +182,26 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
       keycloak.start();
       keycloakBaseUrl = "http://" + keycloak.getHost() + ":" + keycloak.getMappedPort(8080);
 
-      // --- Configure Keycloak via Admin API (realm + client + users) ---
+      // --- Configure Keycloak (realm/client/users) ---
       String adminToken = getAdminToken("admin", "admin");
       ensureRealm(adminToken);
       ensurePublicClient(adminToken);
       createUserWithPassword(adminToken, "alice", "alice!");
       createUserWithPassword(adminToken, "bob", "bob!");
 
-      // --- Start Envoy (pre-built image tag) ---
-      // Prebuilt image used to avoid building Envoy from source during tests
-      // Package installation during build can be flaky in test environment
-      // Image building is a Gradle prerequisite to running integration tests
+      // --- Micronaut app container ---
+      messagingApp =
+          new GenericContainer<>("realtime-messaging:it")
+              .withNetwork(network)
+              .withNetworkAliases("messaging_app")
+              .withExposedPorts(8080)
+              .withEnv("MICRONAUT_ENVIRONMENTS", "test")
+              .withEnv("MICRONAUT_SERVER_HOST", "0.0.0.0")
+              .withEnv("MICRONAUT_SERVER_PORT", "8080")
+              .waitingFor(Wait.forListeningPort().withStartupTimeout(STARTUP_TIMEOUT));
+      messagingApp.start();
+
+      // --- Envoy ---
       String issuer = keycloakBaseUrl + "/realms/" + REALM;
       String jwksUri = "http://keycloak:8080/realms/" + REALM + "/protocol/openid-connect/certs";
 
@@ -208,7 +213,6 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
               .withNetwork(network)
               .withNetworkAliases("envoy")
               .withExposedPorts(10000, 9901)
-              .withExtraHost("host.testcontainers.internal", "host-gateway")
               .withCopyFileToContainer(
                   MountableFile.forHostPath(envoyDir.resolve("envoy.template.yaml")),
                   "/etc/envoy/envoy.template.yaml")
@@ -216,26 +220,17 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
               .withEnv("KC_JWKS_URI", jwksUri)
               .withEnv("KC_JWKS_HOST", "keycloak")
               .withEnv("KC_JWKS_PORT", "8080")
-              .withEnv("UPSTREAM_HOST", "host.testcontainers.internal")
-              .withEnv("UPSTREAM_PORT", Integer.toString(app.getPort()))
+              .withEnv("UPSTREAM_HOST", "messaging_app")
+              .withEnv("UPSTREAM_PORT", "8080")
               .withEnv("ENVOY_LISTEN_PORT", "10000")
               .withEnv("ENVOY_ADMIN_PORT", "9901")
               .withStartupAttempts(1)
               .waitingFor(
                   Wait.forHttp("/server_info").forPort(9901).withStartupTimeout(STARTUP_TIMEOUT));
 
-      try {
-        envoy.start();
-      } catch (Exception e) {
-        System.err.println("=== Envoy failed to start ===");
-        try {
-          System.err.println(envoy.getLogs());
-        } catch (Exception ignored) {
-        }
-        throw e;
-      }
-
+      envoy.start();
       envoyBaseUrl = "http://" + envoy.getHost() + ":" + envoy.getMappedPort(10000);
+      envoyAdminBaseUrl = "http://" + envoy.getHost() + ":" + envoy.getMappedPort(9901);
     }
 
     // -------------------------
@@ -458,6 +453,17 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
       }
     }
 
+    public String envoyClusters() throws IOException {
+      Request req =
+          new Request.Builder().url(envoyAdminBaseUrl + "/clusters?format=json").get().build();
+
+      try (Response r = http.newCall(req).execute()) {
+        String body = r.body() == null ? "" : r.body().string();
+        Assertions.assertEquals(200, r.code(), "envoy admin /clusters failed: " + body);
+        return body;
+      }
+    }
+
     // -------------------------
     // Teardown (called once)
     // -------------------------
@@ -469,8 +475,7 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
       if (keycloak != null) keycloak.stop();
       if (kcDb != null) kcDb.stop();
       if (network != null) network.close();
-      if (app != null) app.stop();
-      if (ctx != null) ctx.close();
+      if (messagingApp != null) messagingApp.stop();
     }
   }
 }
