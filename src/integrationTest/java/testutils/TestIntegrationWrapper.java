@@ -96,10 +96,7 @@ public class TestIntegrationWrapper {
         String jwksUri = "http://keycloak:8080/realms/" + REALM + "/protocol/openid-connect/certs";
         Path projectRoot = Paths.get("").toAbsolutePath().normalize();
         Path envoyDir = projectRoot.resolve("envoy");
-        ImageFromDockerfile envoyImage = new ImageFromDockerfile()
-                .withFileFromPath(".", envoyDir)
-                .withDockerfile(envoyDir.resolve("envoy.dockerfile"));
-        envoy = new GenericContainer<>(envoyImage)
+        envoy = new GenericContainer<>("realtime-envoy:it")
                 .withNetwork(network)
                 .withNetworkAliases("envoy")
                 .withExposedPorts(10000, 9901)

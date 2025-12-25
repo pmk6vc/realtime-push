@@ -94,6 +94,26 @@ configurations[integrationTest.annotationProcessorConfigurationName].extendsFrom
     configurations["annotationProcessor"]
 )
 
+// Task to build the Envoy Docker image for integration tests
+val buildEnvoyImage by tasks.registering(Exec::class) {
+    group = "verification"
+    description = "Builds the Envoy Docker image used for integration tests"
+
+    workingDir = projectDir
+
+    commandLine(
+        "docker", "build",
+        "-t", "realtime-envoy:it",
+        "-f", "envoy/envoy.dockerfile",
+        "envoy"
+    )
+
+    // Helpful logging
+    doFirst {
+        println("Building Envoy image realtime-envoy:it")
+    }
+}
+
 tasks.register<Test>("integrationTest") {
     description = "Runs integration tests."
     group = "verification"
@@ -112,6 +132,7 @@ tasks.register<Test>("integrationTest") {
     }
 
     maxParallelForks = 1
+    dependsOn(buildEnvoyImage)
 }
 
 tasks.named("check") {
