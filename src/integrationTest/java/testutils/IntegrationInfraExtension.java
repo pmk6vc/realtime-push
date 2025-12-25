@@ -29,8 +29,8 @@ import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.utility.MountableFile;
 
 /**
- * JUnit 5 extension that starts all infra ONCE per test run, and
- * tears it down ONCE after all integration tests complete.
+ * JUnit 5 extension that starts all infra ONCE per test run, and tears it down ONCE after all
+ * integration tests complete.
  */
 public final class IntegrationInfraExtension implements BeforeAllCallback, ParameterResolver {
 
@@ -379,7 +379,7 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
     private void createUserWithPassword(String adminToken, String username, String password)
         throws IOException {
       String payload =
-              """
+          """
               {
                 "username": "%s",
                 "email": "%s@example.com",
@@ -390,7 +390,7 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
                 "requiredActions": []
               }
               """
-                      .formatted(username, username);
+              .formatted(username, username);
       Request create =
           new Request.Builder()
               .url(keycloakBaseUrl + "/admin/realms/" + REALM + "/users")

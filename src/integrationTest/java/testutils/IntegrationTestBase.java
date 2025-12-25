@@ -5,10 +5,10 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.extension.ExtensionContext;
 
 /**
- * Class that exists to provide common utilities for integration test ergonomics.
- * Separate from any core functionality related to spinning up / tearing down infrastructure.
+ * Class that exists to provide common utilities for integration test ergonomics. Separate from any
+ * core functionality related to spinning up / tearing down infrastructure.
  *
- * Extend this in all integration test classes.
+ * <p>Extend this in all integration test classes.
  */
 @ExtendWith(IntegrationInfraExtension.class)
 public abstract class IntegrationTestBase {
