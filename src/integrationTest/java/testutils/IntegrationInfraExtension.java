@@ -198,8 +198,14 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
               .withEnv("MICRONAUT_ENVIRONMENTS", "test")
               .withEnv("MICRONAUT_SERVER_HOST", "0.0.0.0")
               .withEnv("MICRONAUT_SERVER_PORT", "8080")
-              .waitingFor(Wait.forListeningPort().withStartupTimeout(STARTUP_TIMEOUT));
+                  .waitingFor(
+                          Wait.forHttp("/health")
+                                  .forPort(8080)
+                                  .withStartupTimeout(Duration.ofMinutes(2))
+                  );
       messagingApp.start();
+      System.err.println("=== messaging_app logs ===");
+      System.err.println(messagingApp.getLogs());
 
       // --- Envoy ---
       String issuer = keycloakBaseUrl + "/realms/" + REALM;

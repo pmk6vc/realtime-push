@@ -156,6 +156,7 @@ dependencies {
     // App
     implementation("io.micronaut.serde:micronaut-serde-jackson")
     implementation("io.micronaut:micronaut-http-server-netty")
+    implementation("io.micronaut:micronaut-management")
     implementation("io.micronaut:micronaut-websocket")
 
     compileOnly("io.micronaut:micronaut-http-client")

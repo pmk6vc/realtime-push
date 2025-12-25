@@ -1,4 +1,4 @@
-package testutils;
+package messaging;
 
 import io.micronaut.context.annotation.Requires;
 import io.micronaut.http.annotation.*;
