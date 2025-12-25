@@ -43,4 +43,11 @@ public class AuthIntegrationTest extends IntegrationTestBase {
       assertEquals(expectedSub, userId.asText());
     }
   }
+
+  @Test
+  void todo(IntegrationInfraExtension.Infra infra) throws Exception {
+    // TODO add other tests suggested by chatgpt for envoy (invalid header, no spoofing, expired token, etc)
+    // TODO add representative tests for websocket connections
+    // TODO add tests for routing based on user ID in the hash ring if possible
+  }
 }
