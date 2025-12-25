@@ -1,4 +1,4 @@
-package networking;
+package e2e;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Test;
 import testutils.IntegrationInfraExtension;
 import testutils.IntegrationTestBase;
 
-public class AuthIT extends IntegrationTestBase {
+public class AuthIntegrationTest extends IntegrationTestBase {
 
   @Test
   void missingToken_is401(IntegrationInfraExtension.Infra infra) throws Exception {
