@@ -34,6 +34,15 @@ dependencies {
     testImplementation("org.mockito:mockito-core:5.4.0")
     testImplementation("org.mockito:mockito-junit-jupiter:5.4.0")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+
+    testImplementation("org.junit.jupiter:junit-jupiter-api")
+    testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine")
+
+    testImplementation("org.testcontainers:junit-jupiter:1.20.4")
+    testImplementation("org.testcontainers:postgresql:1.20.4")
+
+    testImplementation("com.squareup.okhttp3:okhttp:4.12.0")
+    testImplementation("com.fasterxml.jackson.core:jackson-databind:2.17.2")
 }
 
 // Compile Java source code with specified compatibility version
