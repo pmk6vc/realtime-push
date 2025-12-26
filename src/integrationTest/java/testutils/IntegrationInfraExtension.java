@@ -1,5 +1,7 @@
 package testutils;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.Closeable;
@@ -23,8 +25,8 @@ import org.junit.jupiter.api.extension.ParameterResolutionException;
 import org.junit.jupiter.api.extension.ParameterResolver;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.Network;
-import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.utility.MountableFile;
 
 /**
@@ -97,11 +99,12 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
     private Network network;
 
     private GenericContainer<?> messagingApp;
-    private PostgreSQLContainer<?> kcDb;
+    private PostgreSQLContainer kcDb;
     private GenericContainer<?> keycloak;
     private GenericContainer<?> envoy;
 
     private String keycloakBaseUrl;
+    private String adminToken;
     private final Map<String, String> userSubByUsername = new HashMap<>();
     private String envoyBaseUrl;
     private String envoyAdminBaseUrl;
@@ -156,7 +159,7 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
 
       // --- Postgres for Keycloak ---
       kcDb =
-          new PostgreSQLContainer<>("postgres:16")
+          new PostgreSQLContainer("postgres:16")
               .withNetwork(network)
               .withNetworkAliases("keycloak-db")
               .withDatabaseName("keycloak")
@@ -185,11 +188,11 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
       keycloakBaseUrl = "http://" + keycloak.getHost() + ":" + keycloak.getMappedPort(8080);
 
       // --- Configure Keycloak (realm/client/users) ---
-      String adminToken = getAdminToken("admin", "admin");
-      ensureRealm(adminToken);
-      ensurePublicClient(adminToken);
-      createUserWithPassword(adminToken, "alice", "alice!");
-      createUserWithPassword(adminToken, "bob", "bob!");
+      adminToken = getAdminToken("admin", "admin");
+      ensureRealm();
+      ensurePublicClient();
+      createUserWithPassword("alice", "alice!");
+      createUserWithPassword("bob", "bob!");
 
       // --- Micronaut app container ---
       messagingApp =
@@ -270,7 +273,7 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
       }
     }
 
-    private void ensureRealm(String adminToken) throws IOException {
+    private void ensureRealm() throws IOException {
       Request get =
           new Request.Builder()
               .url(keycloakBaseUrl + "/admin/realms/" + REALM)
@@ -297,7 +300,7 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
       }
     }
 
-    private void ensurePublicClient(String adminToken) throws IOException {
+    private void ensurePublicClient() throws IOException {
       HttpUrl url =
           Objects.requireNonNull(
                   HttpUrl.parse(keycloakBaseUrl + "/admin/realms/" + REALM + "/clients"))
@@ -314,7 +317,7 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
 
       try (Response r = http.newCall(list).execute()) {
         String body = r.body() == null ? "" : r.body().string();
-        Assertions.assertEquals(200, r.code(), "List clients failed: " + body);
+        assertEquals(200, r.code(), "List clients failed: " + body);
 
         JsonNode arr = MAPPER.readTree(body);
         if (arr.isArray() && !arr.isEmpty()) return;
@@ -347,8 +350,7 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
       }
     }
 
-    private void createUserWithPassword(String adminToken, String username, String password)
-        throws IOException {
+    private void createUserWithPassword(String username, String password) throws IOException {
       String payload =
           """
               {
@@ -373,9 +375,9 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
       try (Response r = http.newCall(create).execute()) {
         String body = r.body() == null ? "" : r.body().string();
         if (r.code() == 409) {
-          userId = lookupUserId(adminToken, username);
+          userId = lookupUserId(username);
         } else {
-          Assertions.assertEquals(201, r.code(), "user create failed: " + body);
+          assertEquals(201, r.code(), "user create failed: " + body);
           String loc = r.header("Location");
           Assertions.assertNotNull(loc);
           userId = loc.substring(loc.lastIndexOf('/') + 1);
@@ -400,11 +402,11 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
 
       try (Response r = http.newCall(setPass).execute()) {
         String body = r.body() == null ? "" : r.body().string();
-        Assertions.assertEquals(204, r.code(), "set password failed: " + body);
+        assertEquals(204, r.code(), "set password failed: " + body);
       }
     }
 
-    private String lookupUserId(String adminToken, String username) throws IOException {
+    private String lookupUserId(String username) throws IOException {
       HttpUrl url =
           Objects.requireNonNull(
                   HttpUrl.parse(keycloakBaseUrl + "/admin/realms/" + REALM + "/users"))
@@ -422,7 +424,7 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
 
       try (Response r = http.newCall(req).execute()) {
         String body = r.body() == null ? "" : r.body().string();
-        Assertions.assertEquals(200, r.code(), "lookup user failed: " + body);
+        assertEquals(200, r.code(), "lookup user failed: " + body);
 
         JsonNode arr = MAPPER.readTree(body);
         Assertions.assertTrue(arr.isArray() && !arr.isEmpty(), "user not found: " + username);
@@ -448,11 +450,12 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
     // Public helpers for tests
     // -------------------------
 
-    public JsonNode readJson(Response r) throws IOException {
-      if (r.body() == null) {
-        throw new IllegalStateException("Response body is null");
+    public JsonNode readJsonBody(String body) throws IOException {
+      String s = body == null ? "" : body.trim();
+      if (!(s.startsWith("{") || s.startsWith("["))) {
+        throw new IllegalArgumentException("Not JSON: " + s);
       }
-      return MAPPER.readTree(r.body().string());
+      return MAPPER.readTree(s);
     }
 
     public String userSub(String username) {
@@ -480,14 +483,18 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
 
       try (Response r = http.newCall(req).execute()) {
         String responseBody = r.body() == null ? "" : r.body().string();
-        Assertions.assertEquals(200, r.code(), "token failed: " + responseBody);
+        assertEquals(200, r.code(), "token failed: " + responseBody);
 
         JsonNode json = MAPPER.readTree(responseBody);
         JsonNode token = json.get("access_token");
         Assertions.assertNotNull(token, "access_token missing: " + responseBody);
-        Assertions.assertTrue(!token.asText().isBlank(), "access_token blank: " + responseBody);
+        Assertions.assertFalse(token.asText().isBlank(), "access_token blank: " + responseBody);
         return token.asText();
       }
+    }
+
+    public java.net.URI envoyBaseUri() {
+      return java.net.URI.create(envoyBaseUrl());
     }
 
     public String envoyClusters() throws IOException {
@@ -496,7 +503,7 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
 
       try (Response r = http.newCall(req).execute()) {
         String body = r.body() == null ? "" : r.body().string();
-        Assertions.assertEquals(200, r.code(), "envoy admin /clusters failed: " + body);
+        assertEquals(200, r.code(), "envoy admin /clusters failed: " + body);
         return body;
       }
     }
