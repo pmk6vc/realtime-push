@@ -24,42 +24,35 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @ClientWebSocket
-public abstract class TestMicronautWebSocketClient implements AutoCloseable {
+public abstract class TestMicronautWebSocketClient extends AbstractWebSocketClientTemplate {
 
   private final BlockingQueue<String> receivedMessages = new LinkedBlockingQueue<>();
   private final CompletableFuture<CloseReason> closeReasonFuture = new CompletableFuture<>();
   private volatile WebSocketSession session;
 
   @OnOpen
-  void onOpen(WebSocketSession session) {
+  public void onOpen(WebSocketSession session) {
     this.session = session;
   }
 
   @OnMessage
-  void onMessage(String message) {
-    receivedMessages.add(message);
+  public void onMessage(String message) {
+    super.onMessage(message);
   }
 
   @OnClose
-  void onClose(CloseReason reason) {
-    closeReasonFuture.complete(reason);
+  public void onClose(CloseReason reason) {
+    super.onClose(reason);
   }
 
   @OnError
   public void onError(Throwable t) {
-    closeReasonFuture.completeExceptionally(t);
-  }
-
-  public BlockingQueue<String> getReceivedMessages() {
-    return receivedMessages;
-  }
-
-  public CompletableFuture<CloseReason> getCloseReasonFuture() {
-    return closeReasonFuture;
+    super.onError(t);
   }
 
   public abstract void send(String message);
 
+  @Override
   public void close() {
     if (session != null && session.isOpen()) {
       session.close();

@@ -16,7 +16,7 @@ public class AbstractWebSocketClientTemplate implements AutoCloseable {
     private final BlockingQueue<String> receivedMessages = new LinkedBlockingQueue<>();
     private final CompletableFuture<CloseReason> closeReasonFuture = new CompletableFuture<>();
 
-    public void onText(String msg) { receivedMessages.add(msg); }
+    public void onMessage(String msg) { receivedMessages.add(msg); }
     public void onClose(CloseReason r) { closeReasonFuture.complete(r); }
     public void onError(Throwable t) { closeReasonFuture.completeExceptionally(t); }
     public BlockingQueue<String> getReceivedMessages() { return receivedMessages;}
