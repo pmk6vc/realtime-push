@@ -11,7 +11,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import testutils.IntegrationInfraExtension;
 
 @ExtendWith(IntegrationInfraExtension.class)
-public class AuthIntegrationTest {
+public class EnvoyAuthIntegrationTest {
 
   private record ResponseRecord(int code, String body, String contentType) {}
 
@@ -76,9 +76,6 @@ public class AuthIntegrationTest {
 
   @Test
   void todo(IntegrationInfraExtension.Infra infra) throws Exception {
-    // TODO add other tests suggested by chatgpt for envoy (invalid header, no spoofing, expired
-    // token, etc)
-    // TODO add representative tests for websocket connections
     // TODO add tests for routing based on user ID in the hash ring if possible
   }
 }
