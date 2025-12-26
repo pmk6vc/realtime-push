@@ -15,19 +15,14 @@ import reactor.core.publisher.Flux;
 import java.net.URI;
 import java.time.Duration;
 import java.util.Map;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @ClientWebSocket
-public abstract class TestMicronautWebSocketClient extends AbstractWebSocketClientTemplate {
+public abstract class MicronautTestWebSocketClient extends AbstractWebSocketClientTemplate {
 
-  private final BlockingQueue<String> receivedMessages = new LinkedBlockingQueue<>();
-  private final CompletableFuture<CloseReason> closeReasonFuture = new CompletableFuture<>();
   private volatile WebSocketSession session;
 
   @OnOpen
@@ -37,17 +32,17 @@ public abstract class TestMicronautWebSocketClient extends AbstractWebSocketClie
 
   @OnMessage
   public void onMessage(String message) {
-    super.onMessage(message);
+    super.onWebSocketMessage(message);
   }
 
   @OnClose
   public void onClose(CloseReason reason) {
-    super.onClose(reason);
+    super.onWebSocketClose(reason);
   }
 
   @OnError
   public void onError(Throwable t) {
-    super.onError(t);
+    super.onWebSocketError(t);
   }
 
   public abstract void send(String message);
@@ -59,15 +54,15 @@ public abstract class TestMicronautWebSocketClient extends AbstractWebSocketClie
     }
   }
 
-  public static TestMicronautWebSocketClient connect(WebSocketClient wsClient, URI uri, Map<String, String> headers) {
+  public static MicronautTestWebSocketClient connect(WebSocketClient wsClient, URI uri, Map<String, String> headers) {
     MutableHttpRequest<?> req = HttpRequest.GET(uri);
     if (headers != null) headers.forEach(req::header);
-    return Flux.from(wsClient.connect(TestMicronautWebSocketClient.class, req))
+    return Flux.from(wsClient.connect(MicronautTestWebSocketClient.class, req))
             .blockFirst(Duration.ofSeconds(5));
   }
 
-  public static TestMicronautWebSocketClient connectAndAwaitAck(WebSocketClient wsClient, URI uri, Map<String, String> headers) throws Exception {
-    TestMicronautWebSocketClient client = TestMicronautWebSocketClient.connect(wsClient, uri, headers);
+  public static MicronautTestWebSocketClient connectAndAwaitAck(WebSocketClient wsClient, URI uri, Map<String, String> headers) throws Exception {
+    MicronautTestWebSocketClient client = MicronautTestWebSocketClient.connect(wsClient, uri, headers);
     String msg = client.getReceivedMessages().poll(250, TimeUnit.MILLISECONDS);
     assertNotNull(msg, "Expected ack message after connect");
     assertTrue(msg.contains("\"type\":\"ack\""), "Expected ack, got: " + msg);
