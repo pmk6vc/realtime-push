@@ -1,5 +1,5 @@
 services:
-
+  # Keycloak backed by Postgres
   keycloak-db:
     image: postgres:16
     environment:
@@ -44,6 +44,7 @@ services:
       - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
     networks: [ messaging_network ]
 
+  # Envoy
   envoy:
     build:
       context: ./envoy
@@ -69,7 +70,54 @@ services:
     entrypoint: [ "/bin/sh", "/entrypoint.sh" ]
     networks: [ messaging_network ]
 
+  # Citus cluster
+  citus_master:
+    image: citusdata/citus:postgres_16
+    container_name: citus_master
+    ports:
+      - "${MASTER_PORT}:5432"
+    environment:
+      POSTGRES_USER: ${CITUS_USER}
+      POSTGRES_PASSWORD: ${CITUS_PASSWORD}
+      POSTGRES_DB: ${CITUS_DB}
+    volumes:
+      - ./db/init:/docker-entrypoint-initdb.d
+    depends_on:
+      - citus_worker_1
+      - citus_worker_2
+      - citus_worker_3
 
+  citus_worker_1:
+    image: citusdata/citus:postgres_16
+    container_name: citus_worker_1
+    ports:
+      - "${WORKER1_PORT}:5432"
+    environment:
+      POSTGRES_USER: ${CITUS_USER}
+      POSTGRES_PASSWORD: ${CITUS_PASSWORD}
+      POSTGRES_DB: ${CITUS_DB}
+
+  citus_worker_2:
+    image: citusdata/citus:postgres_16
+    container_name: citus_worker_2
+    ports:
+      - "${WORKER2_PORT}:5432"
+    environment:
+      POSTGRES_USER: ${CITUS_USER}
+      POSTGRES_PASSWORD: ${CITUS_PASSWORD}
+      POSTGRES_DB: ${CITUS_DB}
+
+  citus_worker_3:
+    image: citusdata/citus:postgres_16
+    container_name: citus_worker_3
+    ports:
+      - "${WORKER3_PORT}:5432"
+    environment:
+      POSTGRES_USER: ${CITUS_USER}
+      POSTGRES_PASSWORD: ${CITUS_PASSWORD}
+      POSTGRES_DB: ${CITUS_DB}
+
+  # Application
   messaging_app:
     image: realtime-messaging:latest
     environment:
@@ -79,6 +127,8 @@ services:
     expose:
       - "${UPSTREAM_PORT}"
     networks: [ messaging_network ]
+    depends_on:
+      - citus_master
 
 networks:
   messaging_network:
