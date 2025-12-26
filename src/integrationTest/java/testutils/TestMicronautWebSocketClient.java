@@ -24,7 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @ClientWebSocket
-public abstract class TestWebSocketClient implements AutoCloseable {
+public abstract class TestMicronautWebSocketClient implements AutoCloseable {
 
   private final BlockingQueue<String> receivedMessages = new LinkedBlockingQueue<>();
   private final CompletableFuture<CloseReason> closeReasonFuture = new CompletableFuture<>();
@@ -66,15 +66,15 @@ public abstract class TestWebSocketClient implements AutoCloseable {
     }
   }
 
-  public static TestWebSocketClient connect(WebSocketClient wsClient, URI uri, Map<String, String> headers) {
+  public static TestMicronautWebSocketClient connect(WebSocketClient wsClient, URI uri, Map<String, String> headers) {
     MutableHttpRequest<?> req = HttpRequest.GET(uri);
     if (headers != null) headers.forEach(req::header);
-    return Flux.from(wsClient.connect(TestWebSocketClient.class, req))
+    return Flux.from(wsClient.connect(TestMicronautWebSocketClient.class, req))
             .blockFirst(Duration.ofSeconds(5));
   }
 
-  public static TestWebSocketClient connectAndAwaitAck(WebSocketClient wsClient, URI uri, Map<String, String> headers) throws Exception {
-    TestWebSocketClient client = TestWebSocketClient.connect(wsClient, uri, headers);
+  public static TestMicronautWebSocketClient connectAndAwaitAck(WebSocketClient wsClient, URI uri, Map<String, String> headers) throws Exception {
+    TestMicronautWebSocketClient client = TestMicronautWebSocketClient.connect(wsClient, uri, headers);
     String msg = client.getReceivedMessages().poll(250, TimeUnit.MILLISECONDS);
     assertNotNull(msg, "Expected ack message after connect");
     assertTrue(msg.contains("\"type\":\"ack\""), "Expected ack, got: " + msg);

@@ -6,25 +6,21 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static testutils.TestWebSocketClient.connectAndAwaitAck;
+import static testutils.TestMicronautWebSocketClient.connectAndAwaitAck;
 
-import io.micronaut.http.HttpRequest;
-import io.micronaut.http.MutableHttpRequest;
 import io.micronaut.runtime.server.EmbeddedServer;
 import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
 import io.micronaut.websocket.CloseReason;
 import io.micronaut.websocket.WebSocketClient;
 import jakarta.inject.Inject;
 import java.net.URI;
-import java.time.Duration;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import org.junit.jupiter.api.Test;
-import reactor.core.publisher.Flux;
-import testutils.TestWebSocketClient;
+import testutils.TestMicronautWebSocketClient;
 
 @MicronautTest
 class MessagingServerComponentTest {
@@ -40,15 +36,15 @@ class MessagingServerComponentTest {
 
   @Test
   void onSessionOpen_closesWhenMissingUserIdHeader() throws Exception {
-    TestWebSocketClient client = TestWebSocketClient.connect(wsClient, chatUri(), null);
+    TestMicronautWebSocketClient client = TestMicronautWebSocketClient.connect(wsClient, chatUri(), null);
     CloseReason cr = client.getCloseReasonFuture().get(5, TimeUnit.SECONDS);
     assertEquals(CloseReason.POLICY_VIOLATION.getCode(), cr.getCode());
   }
 
   @Test
   void onSessionOpen_replacesPreexistingSession() throws Exception {
-    TestWebSocketClient firstClient = connectAndAwaitAck(wsClient, chatUri(), Map.of(USER_HEADER, "alice"));
-    TestWebSocketClient secondClient = connectAndAwaitAck(wsClient, chatUri(), Map.of(USER_HEADER, "alice"));
+    TestMicronautWebSocketClient firstClient = connectAndAwaitAck(wsClient, chatUri(), Map.of(USER_HEADER, "alice"));
+    TestMicronautWebSocketClient secondClient = connectAndAwaitAck(wsClient, chatUri(), Map.of(USER_HEADER, "alice"));
     try (firstClient;
         secondClient) {
       CloseReason cr = firstClient.getCloseReasonFuture().get(250, TimeUnit.MILLISECONDS);
@@ -63,8 +59,8 @@ class MessagingServerComponentTest {
 
   @Test
   void onMessage_broadcastsToOtherUsers() throws Exception {
-    TestWebSocketClient aliceClient = connectAndAwaitAck(wsClient, chatUri(), Map.of(USER_HEADER, "alice"));
-    TestWebSocketClient bobClient = connectAndAwaitAck(wsClient, chatUri(), Map.of(USER_HEADER, "bob"));
+    TestMicronautWebSocketClient aliceClient = connectAndAwaitAck(wsClient, chatUri(), Map.of(USER_HEADER, "alice"));
+    TestMicronautWebSocketClient bobClient = connectAndAwaitAck(wsClient, chatUri(), Map.of(USER_HEADER, "bob"));
     try (aliceClient;
         bobClient) {
       String messageFromAlice = "Hello, Bob!";
@@ -81,8 +77,8 @@ class MessagingServerComponentTest {
 
   @Test
   void onMessage_doesNotBroadcastToDisconnectedUsers() throws Exception {
-    TestWebSocketClient aliceClient = connectAndAwaitAck(wsClient, chatUri(), Map.of(USER_HEADER, "alice"));
-    TestWebSocketClient bobClient = connectAndAwaitAck(wsClient, chatUri(), Map.of(USER_HEADER, "bob"));
+    TestMicronautWebSocketClient aliceClient = connectAndAwaitAck(wsClient, chatUri(), Map.of(USER_HEADER, "alice"));
+    TestMicronautWebSocketClient bobClient = connectAndAwaitAck(wsClient, chatUri(), Map.of(USER_HEADER, "bob"));
     try (aliceClient;
         bobClient) {
       bobClient.close();
@@ -96,8 +92,8 @@ class MessagingServerComponentTest {
 
   @Test
   void onMessage_multipleMessagesDeliveredWithoutDuplicates() throws Exception {
-    TestWebSocketClient aliceClient = connectAndAwaitAck(wsClient, chatUri(), Map.of(USER_HEADER, "alice"));
-    TestWebSocketClient bobClient = connectAndAwaitAck(wsClient, chatUri(), Map.of(USER_HEADER, "bob"));
+    TestMicronautWebSocketClient aliceClient = connectAndAwaitAck(wsClient, chatUri(), Map.of(USER_HEADER, "alice"));
+    TestMicronautWebSocketClient bobClient = connectAndAwaitAck(wsClient, chatUri(), Map.of(USER_HEADER, "bob"));
     Set<String> receivedMessages = new HashSet<>();
     try (aliceClient;
         bobClient) {

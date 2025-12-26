@@ -11,7 +11,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import testutils.IntegrationInfraExtension;
 
 @ExtendWith(IntegrationInfraExtension.class)
-public class EnvoyAuthIntegrationTest {
+public class EnvoyAuthE2ETest {
 
   private record ResponseRecord(int code, String body, String contentType) {}
 

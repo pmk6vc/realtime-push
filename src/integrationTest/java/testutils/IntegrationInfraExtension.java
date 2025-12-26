@@ -493,6 +493,10 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
       }
     }
 
+    public java.net.URI envoyBaseUri() {
+      return java.net.URI.create(envoyBaseUrl());
+    }
+
     public String envoyClusters() throws IOException {
       Request req =
           new Request.Builder().url(envoyAdminBaseUrl + "/clusters?format=json").get().build();
