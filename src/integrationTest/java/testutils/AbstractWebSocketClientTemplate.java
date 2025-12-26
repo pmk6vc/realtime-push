@@ -1,5 +1,9 @@
 package testutils;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micronaut.websocket.CloseReason;
 import java.util.concurrent.*;
@@ -18,7 +22,7 @@ public class AbstractWebSocketClientTemplate implements AutoCloseable {
 
   private final BlockingQueue<String> receivedMessages = new LinkedBlockingQueue<>();
   private final CompletableFuture<CloseReason> closeReasonFuture = new CompletableFuture<>();
-  public static final ObjectMapper MAPPER = new ObjectMapper();
+  private static final ObjectMapper MAPPER = new ObjectMapper();
 
   @Override
   public void close() {}
@@ -41,5 +45,14 @@ public class AbstractWebSocketClientTemplate implements AutoCloseable {
 
   public CompletableFuture<CloseReason> getCloseReasonFuture() {
     return closeReasonFuture;
+  }
+
+  public JsonNode awaitAck() throws Exception {
+    String msg = getReceivedMessages().poll(250, TimeUnit.MILLISECONDS);
+    assertNotNull(msg, "Expected ack message after connect");
+    JsonNode json = MAPPER.readTree(msg);
+    assertEquals("ack", json.get("type").asText(), "Expected ack, got: " + msg);
+    assertNotNull(json.get("userId"), "Ack missing userId: " + msg);
+    return json;
   }
 }

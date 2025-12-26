@@ -1,8 +1,5 @@
 package testutils;
 
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
 import io.micronaut.http.HttpRequest;
 import io.micronaut.http.MutableHttpRequest;
 import io.micronaut.websocket.CloseReason;
@@ -16,7 +13,6 @@ import io.micronaut.websocket.annotation.OnOpen;
 import java.net.URI;
 import java.time.Duration;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 import reactor.core.publisher.Flux;
 
 @ClientWebSocket
@@ -65,9 +61,7 @@ public abstract class MicronautTestWebSocketClient extends AbstractWebSocketClie
       WebSocketClient wsClient, URI uri, Map<String, String> headers) throws Exception {
     MicronautTestWebSocketClient client =
         MicronautTestWebSocketClient.connect(wsClient, uri, headers);
-    String msg = client.getReceivedMessages().poll(250, TimeUnit.MILLISECONDS);
-    assertNotNull(msg, "Expected ack message after connect");
-    assertTrue(msg.contains("\"type\":\"ack\""), "Expected ack, got: " + msg);
+    client.awaitAck();
     return client;
   }
 }
