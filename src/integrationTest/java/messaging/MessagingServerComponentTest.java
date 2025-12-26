@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static testutils.TestWebSocketClient.connectAndAwaitAck;
 
 import io.micronaut.http.HttpRequest;
 import io.micronaut.http.MutableHttpRequest;
@@ -37,35 +38,17 @@ class MessagingServerComponentTest {
     return server.getURI().resolve("/chat");
   }
 
-  private TestWebSocketClient connect(URI uri, Map<String, String> headers) {
-    MutableHttpRequest<?> req = HttpRequest.GET(uri);
-    if (headers != null && !headers.isEmpty()) {
-      headers.forEach(req::header);
-    }
-    return Flux.from(wsClient.connect(TestWebSocketClient.class, req))
-        .blockFirst(Duration.ofSeconds(5));
-  }
-
-  private TestWebSocketClient connectAndAwaitAck(URI uri, Map<String, String> headers)
-      throws Exception {
-    TestWebSocketClient client = connect(uri, headers);
-    String msg = client.getReceivedMessages().poll(250, TimeUnit.MILLISECONDS);
-    assertNotNull(msg, "Expected ack message after connect");
-    assertTrue(msg.contains("\"type\":\"ack\""), "Expected ack, got: " + msg);
-    return client;
-  }
-
   @Test
   void onSessionOpen_closesWhenMissingUserIdHeader() throws Exception {
-    TestWebSocketClient client = connect(chatUri(), null);
+    TestWebSocketClient client = TestWebSocketClient.connect(wsClient, chatUri(), null);
     CloseReason cr = client.getCloseReasonFuture().get(5, TimeUnit.SECONDS);
     assertEquals(CloseReason.POLICY_VIOLATION.getCode(), cr.getCode());
   }
 
   @Test
   void onSessionOpen_replacesPreexistingSession() throws Exception {
-    TestWebSocketClient firstClient = connectAndAwaitAck(chatUri(), Map.of(USER_HEADER, "alice"));
-    TestWebSocketClient secondClient = connectAndAwaitAck(chatUri(), Map.of(USER_HEADER, "alice"));
+    TestWebSocketClient firstClient = connectAndAwaitAck(wsClient, chatUri(), Map.of(USER_HEADER, "alice"));
+    TestWebSocketClient secondClient = connectAndAwaitAck(wsClient, chatUri(), Map.of(USER_HEADER, "alice"));
     try (firstClient;
         secondClient) {
       CloseReason cr = firstClient.getCloseReasonFuture().get(250, TimeUnit.MILLISECONDS);
@@ -80,8 +63,8 @@ class MessagingServerComponentTest {
 
   @Test
   void onMessage_broadcastsToOtherUsers() throws Exception {
-    TestWebSocketClient aliceClient = connectAndAwaitAck(chatUri(), Map.of(USER_HEADER, "alice"));
-    TestWebSocketClient bobClient = connectAndAwaitAck(chatUri(), Map.of(USER_HEADER, "bob"));
+    TestWebSocketClient aliceClient = connectAndAwaitAck(wsClient, chatUri(), Map.of(USER_HEADER, "alice"));
+    TestWebSocketClient bobClient = connectAndAwaitAck(wsClient, chatUri(), Map.of(USER_HEADER, "bob"));
     try (aliceClient;
         bobClient) {
       String messageFromAlice = "Hello, Bob!";
@@ -98,8 +81,8 @@ class MessagingServerComponentTest {
 
   @Test
   void onMessage_doesNotBroadcastToDisconnectedUsers() throws Exception {
-    TestWebSocketClient aliceClient = connectAndAwaitAck(chatUri(), Map.of(USER_HEADER, "alice"));
-    TestWebSocketClient bobClient = connectAndAwaitAck(chatUri(), Map.of(USER_HEADER, "bob"));
+    TestWebSocketClient aliceClient = connectAndAwaitAck(wsClient, chatUri(), Map.of(USER_HEADER, "alice"));
+    TestWebSocketClient bobClient = connectAndAwaitAck(wsClient, chatUri(), Map.of(USER_HEADER, "bob"));
     try (aliceClient;
         bobClient) {
       bobClient.close();
@@ -113,8 +96,8 @@ class MessagingServerComponentTest {
 
   @Test
   void onMessage_multipleMessagesDeliveredWithoutDuplicates() throws Exception {
-    TestWebSocketClient aliceClient = connectAndAwaitAck(chatUri(), Map.of(USER_HEADER, "alice"));
-    TestWebSocketClient bobClient = connectAndAwaitAck(chatUri(), Map.of(USER_HEADER, "bob"));
+    TestWebSocketClient aliceClient = connectAndAwaitAck(wsClient, chatUri(), Map.of(USER_HEADER, "alice"));
+    TestWebSocketClient bobClient = connectAndAwaitAck(wsClient, chatUri(), Map.of(USER_HEADER, "bob"));
     Set<String> receivedMessages = new HashSet<>();
     try (aliceClient;
         bobClient) {
