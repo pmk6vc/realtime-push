@@ -102,6 +102,7 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
     private GenericContainer<?> envoy;
 
     private String keycloakBaseUrl;
+    private String adminToken;
     private final Map<String, String> userSubByUsername = new HashMap<>();
     private String envoyBaseUrl;
     private String envoyAdminBaseUrl;
@@ -185,11 +186,11 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
       keycloakBaseUrl = "http://" + keycloak.getHost() + ":" + keycloak.getMappedPort(8080);
 
       // --- Configure Keycloak (realm/client/users) ---
-      String adminToken = getAdminToken("admin", "admin");
-      ensureRealm(adminToken);
-      ensurePublicClient(adminToken);
-      createUserWithPassword(adminToken, "alice", "alice!");
-      createUserWithPassword(adminToken, "bob", "bob!");
+      adminToken = getAdminToken("admin", "admin");
+      ensureRealm();
+      ensurePublicClient();
+      createUserWithPassword("alice", "alice!");
+      createUserWithPassword("bob", "bob!");
 
       // --- Micronaut app container ---
       messagingApp =
@@ -270,7 +271,7 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
       }
     }
 
-    private void ensureRealm(String adminToken) throws IOException {
+    private void ensureRealm() throws IOException {
       Request get =
           new Request.Builder()
               .url(keycloakBaseUrl + "/admin/realms/" + REALM)
@@ -297,7 +298,7 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
       }
     }
 
-    private void ensurePublicClient(String adminToken) throws IOException {
+    private void ensurePublicClient() throws IOException {
       HttpUrl url =
           Objects.requireNonNull(
                   HttpUrl.parse(keycloakBaseUrl + "/admin/realms/" + REALM + "/clients"))
@@ -347,7 +348,7 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
       }
     }
 
-    private void createUserWithPassword(String adminToken, String username, String password)
+    private void createUserWithPassword(String username, String password)
         throws IOException {
       String payload =
           """
@@ -373,7 +374,7 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
       try (Response r = http.newCall(create).execute()) {
         String body = r.body() == null ? "" : r.body().string();
         if (r.code() == 409) {
-          userId = lookupUserId(adminToken, username);
+          userId = lookupUserId(username);
         } else {
           Assertions.assertEquals(201, r.code(), "user create failed: " + body);
           String loc = r.header("Location");
@@ -404,7 +405,7 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
       }
     }
 
-    private String lookupUserId(String adminToken, String username) throws IOException {
+    private String lookupUserId(String username) throws IOException {
       HttpUrl url =
           Objects.requireNonNull(
                   HttpUrl.parse(keycloakBaseUrl + "/admin/realms/" + REALM + "/users"))
