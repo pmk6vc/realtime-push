@@ -23,7 +23,7 @@ import org.junit.jupiter.api.extension.ParameterResolutionException;
 import org.junit.jupiter.api.extension.ParameterResolver;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.Network;
-import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.utility.MountableFile;
 
@@ -97,7 +97,7 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
     private Network network;
 
     private GenericContainer<?> messagingApp;
-    private PostgreSQLContainer<?> kcDb;
+    private PostgreSQLContainer kcDb;
     private GenericContainer<?> keycloak;
     private GenericContainer<?> envoy;
 
@@ -156,7 +156,7 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
 
       // --- Postgres for Keycloak ---
       kcDb =
-          new PostgreSQLContainer<>("postgres:16")
+          new PostgreSQLContainer("postgres:16")
               .withNetwork(network)
               .withNetworkAliases("keycloak-db")
               .withDatabaseName("keycloak")
@@ -486,7 +486,7 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
         JsonNode json = MAPPER.readTree(responseBody);
         JsonNode token = json.get("access_token");
         Assertions.assertNotNull(token, "access_token missing: " + responseBody);
-        Assertions.assertTrue(!token.asText().isBlank(), "access_token blank: " + responseBody);
+        Assertions.assertFalse(token.asText().isBlank(), "access_token blank: " + responseBody);
         return token.asText();
       }
     }
