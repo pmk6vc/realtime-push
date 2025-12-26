@@ -1,5 +1,7 @@
 package testutils;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.Closeable;
@@ -23,8 +25,8 @@ import org.junit.jupiter.api.extension.ParameterResolutionException;
 import org.junit.jupiter.api.extension.ParameterResolver;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.Network;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.utility.MountableFile;
 
 /**
@@ -315,7 +317,7 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
 
       try (Response r = http.newCall(list).execute()) {
         String body = r.body() == null ? "" : r.body().string();
-        Assertions.assertEquals(200, r.code(), "List clients failed: " + body);
+        assertEquals(200, r.code(), "List clients failed: " + body);
 
         JsonNode arr = MAPPER.readTree(body);
         if (arr.isArray() && !arr.isEmpty()) return;
@@ -348,8 +350,7 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
       }
     }
 
-    private void createUserWithPassword(String username, String password)
-        throws IOException {
+    private void createUserWithPassword(String username, String password) throws IOException {
       String payload =
           """
               {
@@ -376,7 +377,7 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
         if (r.code() == 409) {
           userId = lookupUserId(username);
         } else {
-          Assertions.assertEquals(201, r.code(), "user create failed: " + body);
+          assertEquals(201, r.code(), "user create failed: " + body);
           String loc = r.header("Location");
           Assertions.assertNotNull(loc);
           userId = loc.substring(loc.lastIndexOf('/') + 1);
@@ -401,7 +402,7 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
 
       try (Response r = http.newCall(setPass).execute()) {
         String body = r.body() == null ? "" : r.body().string();
-        Assertions.assertEquals(204, r.code(), "set password failed: " + body);
+        assertEquals(204, r.code(), "set password failed: " + body);
       }
     }
 
@@ -423,7 +424,7 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
 
       try (Response r = http.newCall(req).execute()) {
         String body = r.body() == null ? "" : r.body().string();
-        Assertions.assertEquals(200, r.code(), "lookup user failed: " + body);
+        assertEquals(200, r.code(), "lookup user failed: " + body);
 
         JsonNode arr = MAPPER.readTree(body);
         Assertions.assertTrue(arr.isArray() && !arr.isEmpty(), "user not found: " + username);
@@ -450,11 +451,11 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
     // -------------------------
 
     public JsonNode readJsonBody(String body) throws IOException {
-        String s = body == null ? "" : body.trim();
-        if (!(s.startsWith("{") || s.startsWith("["))) {
-          throw new IllegalArgumentException("Not JSON: " + s);
-        }
-        return MAPPER.readTree(s);
+      String s = body == null ? "" : body.trim();
+      if (!(s.startsWith("{") || s.startsWith("["))) {
+        throw new IllegalArgumentException("Not JSON: " + s);
+      }
+      return MAPPER.readTree(s);
     }
 
     public String userSub(String username) {
@@ -482,7 +483,7 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
 
       try (Response r = http.newCall(req).execute()) {
         String responseBody = r.body() == null ? "" : r.body().string();
-        Assertions.assertEquals(200, r.code(), "token failed: " + responseBody);
+        assertEquals(200, r.code(), "token failed: " + responseBody);
 
         JsonNode json = MAPPER.readTree(responseBody);
         JsonNode token = json.get("access_token");
@@ -498,7 +499,7 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
 
       try (Response r = http.newCall(req).execute()) {
         String body = r.body() == null ? "" : r.body().string();
-        Assertions.assertEquals(200, r.code(), "envoy admin /clusters failed: " + body);
+        assertEquals(200, r.code(), "envoy admin /clusters failed: " + body);
         return body;
       }
     }
