@@ -448,11 +448,12 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
     // Public helpers for tests
     // -------------------------
 
-    public JsonNode readJson(Response r) throws IOException {
-      if (r.body() == null) {
-        throw new IllegalStateException("Response body is null");
-      }
-      return MAPPER.readTree(r.body().string());
+    public JsonNode readJsonBody(String body) throws IOException {
+        String s = body == null ? "" : body.trim();
+        if (!(s.startsWith("{") || s.startsWith("["))) {
+          throw new IllegalArgumentException("Not JSON: " + s);
+        }
+        return MAPPER.readTree(s);
     }
 
     public String userSub(String username) {

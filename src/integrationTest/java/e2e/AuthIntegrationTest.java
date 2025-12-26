@@ -1,47 +1,73 @@
 package e2e;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-
 import com.fasterxml.jackson.databind.JsonNode;
 import okhttp3.Request;
 import okhttp3.Response;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import testutils.IntegrationInfraExtension;
-import testutils.IntegrationTestBase;
 
-public class AuthIntegrationTest extends IntegrationTestBase {
+import java.util.function.Consumer;
 
-  @Test
-  void missingToken_is401(IntegrationInfraExtension.Infra infra) throws Exception {
-    Request req = new Request.Builder().url(infra.envoyBaseUrl() + "/__test/whoami").get().build();
+@ExtendWith(IntegrationInfraExtension.class)
+public class AuthIntegrationTest {
 
-    try (Response r = infra.http().newCall(req).execute()) {
-      assertEquals(401, r.code());
+  private record ResponseRecord(int code, String body, String contentType) {}
+
+  private static ResponseRecord callHello(IntegrationInfraExtension.Infra infra, Consumer<Request.Builder> mut)
+          throws Exception {
+    Request.Builder b = new Request.Builder().url(infra.envoyBaseUrl() + "/").get();
+    mut.accept(b);
+    try (Response r = infra.http().newCall(b.build()).execute()) {
+      return new ResponseRecord(r.code(), r.body() != null ? r.body().string() : "", r.header("Content-Type"));
     }
   }
 
   @Test
-  void validToken_is200_andUserIdIsInjected(IntegrationInfraExtension.Infra infra)
+  void missingTokenYields401(IntegrationInfraExtension.Infra infra) throws Exception {
+    ResponseRecord rb = callHello(infra, b -> {});
+    assertEquals(401, rb.code);
+  }
+
+  @Test
+  void malformedAuthorizationHeaderYields401(IntegrationInfraExtension.Infra infra) throws Exception {
+    ResponseRecord rb = callHello(infra, b -> b.header("Authorization", "NotBearer abc.def.ghi"));
+    assertEquals(401, rb.code);
+  }
+
+  @Test
+  void malformedJwtYields401(IntegrationInfraExtension.Infra infra) throws Exception {
+    ResponseRecord rb = callHello(infra, b -> b.header("Authorization", "Bearer definitely-not-a-jwt"));
+    assertEquals(401, rb.code);
+  }
+
+  @Test
+  void spoofedUserIdHeaderOverwrittenByEnvoy(IntegrationInfraExtension.Infra infra) throws Exception {
+    String token = infra.passwordGrant("alice", "alice!");
+    String expectedSub = infra.userSub("alice");
+    ResponseRecord rb =
+            callHello(
+                    infra,
+                    b -> {
+                      b.header("Authorization", "Bearer " + token);
+                      b.header("X-User-Id", "evil-spoofed-value");
+                    });
+    JsonNode jsonBody = infra.readJsonBody(rb.body);
+    assertEquals(200, rb.code);
+    assertEquals(expectedSub, jsonBody.get("userId").asText(), "Envoy did not overwrite spoofed X-User-Id");
+  }
+
+  @Test
+  void validJwtYields200AndUserIdInjected(IntegrationInfraExtension.Infra infra)
       throws Exception {
     String token = infra.passwordGrant("alice", "alice!");
     String expectedSub = infra.userSub("alice");
-    Request req =
-        new Request.Builder()
-            .url(infra.envoyBaseUrl() + "/")
-            .get()
-            .header("Authorization", "Bearer " + token)
-            .build();
-    try (Response r = infra.http().newCall(req).execute()) {
-      assertEquals(200, r.code());
-
-      JsonNode json = infra.readJson(r);
-      assertEquals("hello", json.get("message").asText());
-
-      JsonNode userId = json.get("userId");
-      assertNotNull(userId, "userId missing from response");
-      assertEquals(expectedSub, userId.asText());
-    }
+    ResponseRecord rb = callHello(infra, b -> b.header("Authorization", "Bearer " + token));
+    JsonNode jsonBody = infra.readJsonBody(rb.body);
+    assertEquals(200, rb.code);
+    assertEquals("hello", jsonBody.get("message").asText());
+    assertEquals(expectedSub, jsonBody.get("userId").asText());
   }
 
   @Test
