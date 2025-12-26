@@ -73,9 +73,4 @@ public class EnvoyAuthE2ETest {
     assertEquals("hello", jsonBody.get("message").asText());
     assertEquals(expectedSub, jsonBody.get("userId").asText());
   }
-
-  @Test
-  void todo(IntegrationInfraExtension.Infra infra) throws Exception {
-    // TODO add tests for routing based on user ID in the hash ring if possible
-  }
 }
