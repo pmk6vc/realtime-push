@@ -36,15 +36,18 @@ class MessagingServerComponentTest {
 
   @Test
   void onSessionOpen_closesWhenMissingUserIdHeader() throws Exception {
-    MicronautTestWebSocketClient client = MicronautTestWebSocketClient.connect(wsClient, chatUri(), null);
+    MicronautTestWebSocketClient client =
+        MicronautTestWebSocketClient.connect(wsClient, chatUri(), null);
     CloseReason cr = client.getCloseReasonFuture().get(5, TimeUnit.SECONDS);
     assertEquals(CloseReason.POLICY_VIOLATION.getCode(), cr.getCode());
   }
 
   @Test
   void onSessionOpen_replacesPreexistingSession() throws Exception {
-    MicronautTestWebSocketClient firstClient = connectAndAwaitAck(wsClient, chatUri(), Map.of(USER_HEADER, "alice"));
-    MicronautTestWebSocketClient secondClient = connectAndAwaitAck(wsClient, chatUri(), Map.of(USER_HEADER, "alice"));
+    MicronautTestWebSocketClient firstClient =
+        connectAndAwaitAck(wsClient, chatUri(), Map.of(USER_HEADER, "alice"));
+    MicronautTestWebSocketClient secondClient =
+        connectAndAwaitAck(wsClient, chatUri(), Map.of(USER_HEADER, "alice"));
     try (firstClient;
         secondClient) {
       CloseReason cr = firstClient.getCloseReasonFuture().get(250, TimeUnit.MILLISECONDS);
@@ -59,8 +62,10 @@ class MessagingServerComponentTest {
 
   @Test
   void onMessage_broadcastsToOtherUsers() throws Exception {
-    MicronautTestWebSocketClient aliceClient = connectAndAwaitAck(wsClient, chatUri(), Map.of(USER_HEADER, "alice"));
-    MicronautTestWebSocketClient bobClient = connectAndAwaitAck(wsClient, chatUri(), Map.of(USER_HEADER, "bob"));
+    MicronautTestWebSocketClient aliceClient =
+        connectAndAwaitAck(wsClient, chatUri(), Map.of(USER_HEADER, "alice"));
+    MicronautTestWebSocketClient bobClient =
+        connectAndAwaitAck(wsClient, chatUri(), Map.of(USER_HEADER, "bob"));
     try (aliceClient;
         bobClient) {
       String messageFromAlice = "Hello, Bob!";
@@ -77,8 +82,10 @@ class MessagingServerComponentTest {
 
   @Test
   void onMessage_doesNotBroadcastToDisconnectedUsers() throws Exception {
-    MicronautTestWebSocketClient aliceClient = connectAndAwaitAck(wsClient, chatUri(), Map.of(USER_HEADER, "alice"));
-    MicronautTestWebSocketClient bobClient = connectAndAwaitAck(wsClient, chatUri(), Map.of(USER_HEADER, "bob"));
+    MicronautTestWebSocketClient aliceClient =
+        connectAndAwaitAck(wsClient, chatUri(), Map.of(USER_HEADER, "alice"));
+    MicronautTestWebSocketClient bobClient =
+        connectAndAwaitAck(wsClient, chatUri(), Map.of(USER_HEADER, "bob"));
     try (aliceClient;
         bobClient) {
       bobClient.close();
@@ -92,8 +99,10 @@ class MessagingServerComponentTest {
 
   @Test
   void onMessage_multipleMessagesDeliveredWithoutDuplicates() throws Exception {
-    MicronautTestWebSocketClient aliceClient = connectAndAwaitAck(wsClient, chatUri(), Map.of(USER_HEADER, "alice"));
-    MicronautTestWebSocketClient bobClient = connectAndAwaitAck(wsClient, chatUri(), Map.of(USER_HEADER, "bob"));
+    MicronautTestWebSocketClient aliceClient =
+        connectAndAwaitAck(wsClient, chatUri(), Map.of(USER_HEADER, "alice"));
+    MicronautTestWebSocketClient bobClient =
+        connectAndAwaitAck(wsClient, chatUri(), Map.of(USER_HEADER, "bob"));
     Set<String> receivedMessages = new HashSet<>();
     try (aliceClient;
         bobClient) {
