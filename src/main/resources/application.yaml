@@ -1,12 +1,26 @@
 micronaut:
   application:
     name: realtime-messaging
+
 endpoints:
   all:
     enabled: true
   health:
     enabled: true
     sensitive: false
+
+datasources:
+  default:
+    url: jdbc:postgresql://localhost:${MASTER_PORT}/${CITUS_DB}
+    username: ${CITUS_USER}
+    password: ${CITUS_PASSWORD}
+    driverClassName: org.postgresql.Driver
+
+flyway:
+  datasources:
+    default:
+      enabled: true
+      locations: classpath:db/migration
 
 logger:
   levels:

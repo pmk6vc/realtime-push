@@ -149,28 +149,36 @@ tasks.test {
 // Dependencies
 // ----------------------------
 dependencies {
+    // ----------------------------
     // Annotation processors
+    // ----------------------------
     annotationProcessor("io.micronaut:micronaut-http-validation")
     annotationProcessor("io.micronaut.serde:micronaut-serde-processor")
 
-    // App
+    // ----------------------------
+    // Database
+    // ----------------------------
+    implementation("io.micronaut.flyway:micronaut-flyway")
+    implementation("org.postgresql:postgresql")
+
+    // ----------------------------
+    // Application
+    // ----------------------------
     implementation("io.micronaut.serde:micronaut-serde-jackson")
     implementation("io.micronaut:micronaut-http-server-netty")
     implementation("io.micronaut:micronaut-management")
     implementation("io.micronaut:micronaut-websocket")
-
     compileOnly("io.micronaut:micronaut-http-client")
-
     runtimeOnly("ch.qos.logback:logback-classic")
     runtimeOnly("org.yaml:snakeyaml")
 
+    // ----------------------------
     // Unit tests
+    // ----------------------------
     testImplementation("io.micronaut:micronaut-http-client")
     testImplementation("io.projectreactor:reactor-core")
-
     testImplementation("org.mockito:mockito-core:5.4.0")
     testImplementation("org.mockito:mockito-junit-jupiter:5.4.0")
-
     testImplementation("org.junit.jupiter:junit-jupiter-api")
     testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
