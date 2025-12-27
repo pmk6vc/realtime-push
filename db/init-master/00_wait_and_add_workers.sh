@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "Waiting for Citus workers to accept connections..."
+echo "[init-master] Waiting for Citus workers to accept connections..."
 for host in citus_worker_1 citus_worker_2 citus_worker_3; do
   until pg_isready -h "$host" -p 5432 -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" >/dev/null 2>&1; do
     sleep 1
@@ -9,13 +9,8 @@ for host in citus_worker_1 citus_worker_2 citus_worker_3; do
   echo "  - $host is ready"
 done
 
-echo "Configuring Citus on coordinator..."
+echo "[init-master] Registering workers with coordinator..."
 
-psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" <<'SQL'
-CREATE EXTENSION IF NOT EXISTS citus;
-SQL
-
-# Add nodes idempotently
 psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" <<'SQL'
 DO $$
 BEGIN
@@ -41,5 +36,3 @@ BEGIN
   END IF;
 END $$;
 SQL
-
-echo "Citus coordinator setup complete."

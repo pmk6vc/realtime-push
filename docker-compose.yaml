@@ -72,6 +72,7 @@ services:
 
   # Citus cluster
   citus_master:
+    hostname: citus_master
     image: citusdata/citus:postgres_16
     container_name: citus_master
     ports:
@@ -81,7 +82,9 @@ services:
       POSTGRES_PASSWORD: ${CITUS_PASSWORD}
       POSTGRES_DB: ${CITUS_DB}
     volumes:
-      - ./db/init:/docker-entrypoint-initdb.d
+      - ./db/init-runner:/docker-entrypoint-initdb.d:ro
+      - ./db/init-common:/init-common:ro
+      - ./db/init-master:/init-master:ro
     depends_on:
       - citus_worker_1
       - citus_worker_2
@@ -94,6 +97,7 @@ services:
       retries: 30
 
   citus_worker_1:
+    hostname: citus_worker_1
     image: citusdata/citus:postgres_16
     container_name: citus_worker_1
     ports:
@@ -102,9 +106,14 @@ services:
       POSTGRES_USER: ${CITUS_USER}
       POSTGRES_PASSWORD: ${CITUS_PASSWORD}
       POSTGRES_DB: ${CITUS_DB}
+    volumes:
+      - ./db/init-runner:/docker-entrypoint-initdb.d:ro
+      - ./db/init-common:/init-common:ro
+      - ./db/init-master:/init-master:ro
     networks: [ messaging_network ]
 
   citus_worker_2:
+    hostname: citus_worker_2
     image: citusdata/citus:postgres_16
     container_name: citus_worker_2
     ports:
@@ -113,9 +122,14 @@ services:
       POSTGRES_USER: ${CITUS_USER}
       POSTGRES_PASSWORD: ${CITUS_PASSWORD}
       POSTGRES_DB: ${CITUS_DB}
+    volumes:
+      - ./db/init-runner:/docker-entrypoint-initdb.d:ro
+      - ./db/init-common:/init-common:ro
+      - ./db/init-master:/init-master:ro
     networks: [ messaging_network ]
 
   citus_worker_3:
+    hostname: citus_worker_3
     image: citusdata/citus:postgres_16
     container_name: citus_worker_3
     ports:
@@ -124,6 +138,10 @@ services:
       POSTGRES_USER: ${CITUS_USER}
       POSTGRES_PASSWORD: ${CITUS_PASSWORD}
       POSTGRES_DB: ${CITUS_DB}
+    volumes:
+      - ./db/init-runner:/docker-entrypoint-initdb.d:ro
+      - ./db/init-common:/init-common:ro
+      - ./db/init-master:/init-master:ro
     networks: [ messaging_network ]
 
   # Application

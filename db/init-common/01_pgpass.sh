@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "Installing .pgpass for inter-node auth..."
+echo "[init-common] Installing .pgpass for inter-node auth..."
 
 PGPASS="/var/lib/postgresql/.pgpass"
 
@@ -12,8 +12,5 @@ citus_worker_2:5432:*:${POSTGRES_USER}:${POSTGRES_PASSWORD}
 citus_worker_3:5432:*:${POSTGRES_USER}:${POSTGRES_PASSWORD}
 EOF
 
-# Ensure the postgres OS user owns the file, and permissions satisfy libpq requirements
 chown postgres:postgres "${PGPASS}"
 chmod 600 "${PGPASS}"
-
-echo ".pgpass installed at ${PGPASS}"
