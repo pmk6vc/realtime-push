@@ -1,5 +1,5 @@
 services:
-
+  # Keycloak backed by Postgres
   keycloak-db:
     image: postgres:16
     environment:
@@ -44,6 +44,7 @@ services:
       - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
     networks: [ messaging_network ]
 
+  # Envoy
   envoy:
     build:
       context: ./envoy
@@ -69,16 +70,99 @@ services:
     entrypoint: [ "/bin/sh", "/entrypoint.sh" ]
     networks: [ messaging_network ]
 
+  # Citus cluster
+  citus_master:
+    hostname: citus_master
+    image: citusdata/citus:postgres_16
+    container_name: citus_master
+    ports:
+      - "${MASTER_PORT}:5432"
+    environment:
+      POSTGRES_USER: ${CITUS_USER}
+      POSTGRES_PASSWORD: ${CITUS_PASSWORD}
+      POSTGRES_DB: ${CITUS_DB}
+    volumes:
+      - ./db/init-runner:/docker-entrypoint-initdb.d:ro
+      - ./db/init-common:/init-common:ro
+      - ./db/init-master:/init-master:ro
+    depends_on:
+      - citus_worker_1
+      - citus_worker_2
+      - citus_worker_3
+    networks: [ messaging_network ]
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${CITUS_USER} -d ${CITUS_DB} -p 5432" ]
+      interval: 2s
+      timeout: 3s
+      retries: 30
 
+  citus_worker_1:
+    hostname: citus_worker_1
+    image: citusdata/citus:postgres_16
+    container_name: citus_worker_1
+    ports:
+      - "${WORKER1_PORT}:5432"
+    environment:
+      POSTGRES_USER: ${CITUS_USER}
+      POSTGRES_PASSWORD: ${CITUS_PASSWORD}
+      POSTGRES_DB: ${CITUS_DB}
+    volumes:
+      - ./db/init-runner:/docker-entrypoint-initdb.d:ro
+      - ./db/init-common:/init-common:ro
+      - ./db/init-master:/init-master:ro
+    networks: [ messaging_network ]
+
+  citus_worker_2:
+    hostname: citus_worker_2
+    image: citusdata/citus:postgres_16
+    container_name: citus_worker_2
+    ports:
+      - "${WORKER2_PORT}:5432"
+    environment:
+      POSTGRES_USER: ${CITUS_USER}
+      POSTGRES_PASSWORD: ${CITUS_PASSWORD}
+      POSTGRES_DB: ${CITUS_DB}
+    volumes:
+      - ./db/init-runner:/docker-entrypoint-initdb.d:ro
+      - ./db/init-common:/init-common:ro
+      - ./db/init-master:/init-master:ro
+    networks: [ messaging_network ]
+
+  citus_worker_3:
+    hostname: citus_worker_3
+    image: citusdata/citus:postgres_16
+    container_name: citus_worker_3
+    ports:
+      - "${WORKER3_PORT}:5432"
+    environment:
+      POSTGRES_USER: ${CITUS_USER}
+      POSTGRES_PASSWORD: ${CITUS_PASSWORD}
+      POSTGRES_DB: ${CITUS_DB}
+    volumes:
+      - ./db/init-runner:/docker-entrypoint-initdb.d:ro
+      - ./db/init-common:/init-common:ro
+      - ./db/init-master:/init-master:ro
+    networks: [ messaging_network ]
+
+  # Application
   messaging_app:
     image: realtime-messaging:latest
     environment:
+      # Micronaut settings
       - MICRONAUT_ENVIRONMENTS=dev
       - MICRONAUT_SERVER_HOST=0.0.0.0
       - MICRONAUT_SERVER_PORT=${UPSTREAM_PORT}
+
+      # DB settings (used in application.yaml)
+      - CITUS_USER=${CITUS_USER}
+      - CITUS_PASSWORD=${CITUS_PASSWORD}
+      - CITUS_DB=${CITUS_DB}
     expose:
       - "${UPSTREAM_PORT}"
     networks: [ messaging_network ]
+    depends_on:
+      citus_master:
+        condition: service_healthy
 
 networks:
   messaging_network:

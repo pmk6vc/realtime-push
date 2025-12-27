@@ -1,6 +1,7 @@
 micronaut:
   application:
     name: realtime-messaging
+
 endpoints:
   all:
     enabled: true
@@ -13,3 +14,5 @@ logger:
     root: INFO
     messaging: INFO
     messaging.ConnectionRegistry: DEBUG
+    org.flywaydb: DEBUG
+    io.micronaut.jdbc: DEBUG
