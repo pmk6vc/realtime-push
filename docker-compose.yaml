@@ -86,6 +86,12 @@ services:
       - citus_worker_1
       - citus_worker_2
       - citus_worker_3
+    networks: [ messaging_network ]
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${CITUS_USER} -d ${CITUS_DB} -p 5432" ]
+      interval: 2s
+      timeout: 3s
+      retries: 30
 
   citus_worker_1:
     image: citusdata/citus:postgres_16
@@ -96,6 +102,7 @@ services:
       POSTGRES_USER: ${CITUS_USER}
       POSTGRES_PASSWORD: ${CITUS_PASSWORD}
       POSTGRES_DB: ${CITUS_DB}
+    networks: [ messaging_network ]
 
   citus_worker_2:
     image: citusdata/citus:postgres_16
@@ -106,6 +113,7 @@ services:
       POSTGRES_USER: ${CITUS_USER}
       POSTGRES_PASSWORD: ${CITUS_PASSWORD}
       POSTGRES_DB: ${CITUS_DB}
+    networks: [ messaging_network ]
 
   citus_worker_3:
     image: citusdata/citus:postgres_16
@@ -116,19 +124,27 @@ services:
       POSTGRES_USER: ${CITUS_USER}
       POSTGRES_PASSWORD: ${CITUS_PASSWORD}
       POSTGRES_DB: ${CITUS_DB}
+    networks: [ messaging_network ]
 
   # Application
   messaging_app:
     image: realtime-messaging:latest
     environment:
+      # Micronaut settings
       - MICRONAUT_ENVIRONMENTS=dev
       - MICRONAUT_SERVER_HOST=0.0.0.0
       - MICRONAUT_SERVER_PORT=${UPSTREAM_PORT}
+
+      # DB settings (used in application.yaml)
+      - CITUS_USER=${CITUS_USER}
+      - CITUS_PASSWORD=${CITUS_PASSWORD}
+      - CITUS_DB=${CITUS_DB}
     expose:
       - "${UPSTREAM_PORT}"
     networks: [ messaging_network ]
     depends_on:
-      - citus_master
+      citus_master:
+        condition: service_healthy
 
 networks:
   messaging_network:

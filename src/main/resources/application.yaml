@@ -11,7 +11,7 @@ endpoints:
 
 datasources:
   default:
-    url: jdbc:postgresql://localhost:${MASTER_PORT}/${CITUS_DB}
+    url: jdbc:postgresql://citus_master:5432/${CITUS_DB}
     username: ${CITUS_USER}
     password: ${CITUS_PASSWORD}
     driverClassName: org.postgresql.Driver
@@ -27,3 +27,5 @@ logger:
     root: INFO
     messaging: INFO
     messaging.ConnectionRegistry: DEBUG
+    org.flywaydb: DEBUG
+    io.micronaut.jdbc: DEBUG

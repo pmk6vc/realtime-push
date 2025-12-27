@@ -158,8 +158,12 @@ dependencies {
     // ----------------------------
     // Database
     // ----------------------------
+    implementation("io.micronaut.sql:micronaut-jdbc-hikari")
     implementation("io.micronaut.flyway:micronaut-flyway")
-    implementation("org.postgresql:postgresql")
+    // Pin Flyway to a modern version that understands newer PG patch versions
+    runtimeOnly("org.flywaydb:flyway-core:11.20.0")
+    runtimeOnly("org.flywaydb:flyway-database-postgresql:11.20.0")
+    runtimeOnly("org.postgresql:postgresql")
 
     // ----------------------------
     // Application
