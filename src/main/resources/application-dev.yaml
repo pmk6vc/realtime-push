@@ -1,0 +1,12 @@
+datasources:
+  default:
+    url: jdbc:postgresql://citus_master:5432/${CITUS_DB}
+    username: ${CITUS_USER}
+    password: ${CITUS_PASSWORD}
+    driverClassName: org.postgresql.Driver
+
+flyway:
+  datasources:
+    default:
+      enabled: true
+      locations: classpath:db/migration

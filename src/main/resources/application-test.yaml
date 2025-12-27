@@ -1,9 +1,8 @@
-micronaut:
-  application:
-    name: realtime-messaging
-endpoints:
-  all:
-    enabled: true
-  health:
-    enabled: true
-    sensitive: false
+flyway:
+  datasources:
+    default:
+      enabled: false
+
+datasources:
+  default:
+    enabled: false
