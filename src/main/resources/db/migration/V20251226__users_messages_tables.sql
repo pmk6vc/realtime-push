@@ -24,8 +24,11 @@ CREATE TABLE channels (
 );
 SELECT create_reference_table('channels');
 
+-- Ensure sequential mode for distributed DDL when FKs reference reference tables
+SET LOCAL citus.multi_shard_modify_mode TO 'sequential';
+
 -- Distributed chat messages table - distribution key is channel_id to localize messages of the same conversation
-CREATE TABLE IF NOT EXISTS messages (
+CREATE TABLE messages (
     channel_id      uuid NOT NULL,
     message_id      uuid NOT NULL DEFAULT gen_random_uuid(),
     sender_user_id  uuid NOT NULL,
