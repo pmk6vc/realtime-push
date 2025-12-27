@@ -9,25 +9,46 @@
   when the database is first created.
  */
 
--- Local (non-distributed) users table
-CREATE TABLE IF NOT EXISTS users (
+-- Users reference table
+CREATE TABLE users (
     user_id      uuid PRIMARY KEY,
     created_at   timestamptz NOT NULL DEFAULT now()
 );
+SELECT create_reference_table('users');
 
--- Distributed chat messages table
--- Pick a distribution column that matches your access patterns.
--- For chat, "conversation_id" is a common choice to keep a conversation's messages colocated.
-CREATE TABLE IF NOT EXISTS chat_messages (
-                                             conversation_id uuid NOT NULL,
-                                             message_id      uuid NOT NULL,
-                                             sender_user_id  uuid NOT NULL,     -- (no FK yet; distributed/local FKs are a bigger topic)
-                                             sent_at         timestamptz NOT NULL DEFAULT now(),
+-- Channels reference table
+CREATE TABLE channels (
+    channel_id      uuid PRIMARY KEY,
+    channel_name    text NOT NULL,
+    created_at      timestamptz NOT NULL DEFAULT now()
+);
+SELECT create_reference_table('channels');
+
+-- Distributed chat messages table - distribution key is channel_id to localize messages of the same conversation
+CREATE TABLE IF NOT EXISTS messages (
+    channel_id      uuid NOT NULL,
+    message_id      uuid NOT NULL DEFAULT gen_random_uuid(),
+    sender_user_id  uuid NOT NULL,
+    sent_at         timestamptz NOT NULL DEFAULT now(),
     body            text NOT NULL,
 
     -- In Citus, primary/unique constraints generally need to include the distribution column.
-    PRIMARY KEY (conversation_id, message_id)
-    );
+    PRIMARY KEY (channel_id, message_id)
+);
+SELECT create_distributed_table('messages', 'channel_id');
 
--- Distribute the table by conversation_id (hash distribution by default)
-SELECT create_distributed_table('chat_messages', 'conversation_id');
+-- FK constraints
+ALTER TABLE messages
+    ADD CONSTRAINT fk_messages_sender_user
+    FOREIGN KEY (sender_user_id)
+    REFERENCES users(user_id)
+    ON DELETE CASCADE;
+ALTER TABLE messages
+    ADD CONSTRAINT fk_messages_channel
+    FOREIGN KEY (channel_id)
+    REFERENCES channels(channel_id)
+    ON DELETE CASCADE;
+
+-- Indexes for performance optimization
+CREATE INDEX idx_messages_sender_user ON messages(sender_user_id);
+CREATE INDEX idx_messages_channel_sent_at ON messages(channel_id, sent_at);
