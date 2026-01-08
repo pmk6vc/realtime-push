@@ -103,6 +103,11 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
     private GenericContainer<?> keycloak;
     private GenericContainer<?> envoy;
 
+    // Citus cluster
+    private static final int CITUS_WORKER_COUNT = 3;
+    private java.util.List<GenericContainer<?>> citusWorkers;
+    private GenericContainer<?> citusMaster;
+
     private String keycloakBaseUrl;
     private String adminToken;
     private final Map<String, String> userSubByUsername = new HashMap<>();
@@ -149,6 +154,14 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
       return keycloak;
     }
 
+    public GenericContainer<?> citusMasterContainer() {
+      return citusMaster;
+    }
+
+    public java.util.List<GenericContainer<?>> citusWorkerContainers() {
+      return citusWorkers;
+    }
+
     // -------------------------
     // Startup
     // -------------------------
@@ -156,6 +169,44 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
     private void start() throws Exception {
       // --- Start network first ---
       network = Network.newNetwork();
+
+      // --- Citus cluster (start workers first, then master) ---
+      java.nio.file.Path projectRoot = java.nio.file.Paths.get("").toAbsolutePath().normalize();
+      java.nio.file.Path dbInitRunner = projectRoot.resolve("db/init-runner");
+      java.nio.file.Path dbInitCommon = projectRoot.resolve("db/init-common");
+      java.nio.file.Path dbInitMaster = projectRoot.resolve("db/init-master");
+
+      String citusUser = "citus";
+      String citusPassword = "citus";
+      String citusDb = "citus";
+
+      // Create and start workers
+      citusWorkers = new java.util.ArrayList<>();
+      for (int i = 1; i <= CITUS_WORKER_COUNT; i++) {
+        GenericContainer<?> worker =
+            createCitusWorker(
+                "citus_worker_" + i,
+                citusUser,
+                citusPassword,
+                citusDb,
+                dbInitRunner,
+                dbInitCommon,
+                dbInitMaster);
+        worker.start();
+        citusWorkers.add(worker);
+      }
+
+      // Start master (coordinator) - depends on workers being ready
+      citusMaster =
+          createCitusWorker(
+              "citus_master",
+              citusUser,
+              citusPassword,
+              citusDb,
+              dbInitRunner,
+              dbInitCommon,
+              dbInitMaster);
+      citusMaster.start();
 
       // --- Postgres for Keycloak ---
       kcDb =
@@ -200,9 +251,13 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
               .withNetwork(network)
               .withNetworkAliases("messaging_app")
               .withExposedPorts(8080)
-              .withEnv("MICRONAUT_ENVIRONMENTS", "test")
+              .withEnv("MICRONAUT_ENVIRONMENTS", "dev")
               .withEnv("MICRONAUT_SERVER_HOST", "0.0.0.0")
               .withEnv("MICRONAUT_SERVER_PORT", "8080")
+              .withEnv("CITUS_USER", citusUser)
+              .withEnv("CITUS_PASSWORD", citusPassword)
+              .withEnv("CITUS_DB", citusDb)
+              .dependsOn(citusMaster)
               .waitingFor(
                   Wait.forHttp("/health").forPort(8080).withStartupTimeout(Duration.ofMinutes(2)));
       messagingApp.start();
@@ -211,7 +266,6 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
       String issuer = keycloakBaseUrl + "/realms/" + REALM;
       String jwksUri = "http://keycloak:8080/realms/" + REALM + "/protocol/openid-connect/certs";
 
-      java.nio.file.Path projectRoot = java.nio.file.Paths.get("").toAbsolutePath().normalize();
       java.nio.file.Path envoyDir = projectRoot.resolve("envoy");
 
       envoy =
@@ -237,6 +291,32 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
       envoy.start();
       envoyBaseUrl = "http://" + envoy.getHost() + ":" + envoy.getMappedPort(10000);
       envoyAdminBaseUrl = "http://" + envoy.getHost() + ":" + envoy.getMappedPort(9901);
+    }
+
+    // -------------------------
+    // Helpers: Citus cluster setup
+    // -------------------------
+
+    private GenericContainer<?> createCitusWorker(
+        String workerName,
+        String citusUser,
+        String citusPassword,
+        String citusDb,
+        java.nio.file.Path dbInitRunner,
+        java.nio.file.Path dbInitCommon,
+        java.nio.file.Path dbInitMaster) {
+      return new GenericContainer<>("citusdata/citus:postgres_16")
+          .withNetwork(network)
+          .withNetworkAliases(workerName)
+          .withExposedPorts(5432)
+          .withEnv("POSTGRES_USER", citusUser)
+          .withEnv("POSTGRES_PASSWORD", citusPassword)
+          .withEnv("POSTGRES_DB", citusDb)
+          .withCopyFileToContainer(
+              MountableFile.forHostPath(dbInitRunner), "/docker-entrypoint-initdb.d")
+          .withCopyFileToContainer(MountableFile.forHostPath(dbInitCommon), "/init-common")
+          .withCopyFileToContainer(MountableFile.forHostPath(dbInitMaster), "/init-master")
+          .waitingFor(Wait.forListeningPort().withStartupTimeout(STARTUP_TIMEOUT));
     }
 
     // -------------------------
@@ -440,10 +520,17 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
     public void close() {
       // Called exactly once when JUnit closes the ROOT context (end of test run)
       if (envoy != null) envoy.stop();
+      if (messagingApp != null) messagingApp.stop();
       if (keycloak != null) keycloak.stop();
       if (kcDb != null) kcDb.stop();
+
+      // Stop Citus cluster (master first, then workers)
+      if (citusMaster != null) citusMaster.stop();
+      if (citusWorkers != null) {
+        citusWorkers.forEach(GenericContainer::stop);
+      }
+
       if (network != null) network.close();
-      if (messagingApp != null) messagingApp.stop();
     }
 
     // -------------------------
