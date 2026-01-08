@@ -161,6 +161,219 @@ docker build -t realtime-envoy:it -f envoy/envoy.dockerfile envoy
 - **Citus primary keys**: Must include distribution column (e.g., messages PK includes `channel_id`)
 - **Integration test parallelism**: Disabled (`maxParallelForks = 1`) to prevent port conflicts with Docker containers
 
+## Implementation TODO List
+
+This section tracks remaining work to achieve production-ready distributed messaging. Last updated: 2026-01-08
+
+### Current Status Summary
+
+**✅ What's Production-Ready:**
+- WebSocket connection management with sticky routing (Envoy RING_HASH)
+- User authentication via Keycloak with JWT validation in Envoy
+- Citus distributed database with proper schema (messages distributed by channel_id)
+- Single-instance message broadcasting
+- Comprehensive integration test infrastructure
+
+**❌ Critical Gaps:**
+- Messages NOT persisted to database
+- No Kafka integration (messages don't reach users on other instances)
+- No session failover/redistribution on instance failure
+- No message ordering or durability guarantees across instances
+
+### Phase 1: Core Distributed Messaging (CRITICAL PATH)
+
+These items are **required** for multi-instance message delivery to work correctly:
+
+1. **Message Persistence Layer**
+   - [ ] Add Micronaut Data JDBC dependency to `build.gradle.kts`
+   - [ ] Create `Message` entity class mapping to `messages` table
+   - [ ] Create `MessageRepository` interface with `@JdbcRepository`
+   - [ ] Inject repository into `MessagingServer`
+   - [ ] Implement database insert in `onSessionMessage()` before broadcasting
+   - [ ] Handle database errors and return error response to sender
+   - [ ] Add unit tests for repository
+   - [ ] Add integration test verifying messages written to Citus
+
+2. **Kafka Producer Integration**
+   - [ ] Add Kafka client dependencies to `build.gradle.kts` (kafka-clients, micronaut-kafka)
+   - [ ] Configure Kafka bootstrap servers in `application.yaml` (environment-specific)
+   - [ ] Create `MessageEvent` class as Kafka payload (contains: channelId, messageId, senderId, body, sentAt)
+   - [ ] Create `@KafkaClient` producer interface
+   - [ ] Add Kafka container to `docker-compose.yaml` and integration test infra
+   - [ ] Publish to Kafka topic after successful database insert
+   - [ ] Add producer error handling (retry logic, dead letter queue)
+   - [ ] Add integration test verifying Kafka publish
+
+3. **Transactional Outbox Pattern**
+   - [ ] Create outbox table migration: `outbox (id UUID PK, aggregate_id UUID, event_type TEXT, payload JSONB, created_at TIMESTAMPTZ)`
+   - [ ] Implement transactional write: single transaction writes both message + outbox entry
+   - [ ] Create scheduled job (`@Scheduled`) to poll outbox and publish to Kafka
+   - [ ] Delete outbox entries after successful Kafka publish
+   - [ ] Add retry logic for failed publishes
+   - [ ] Add integration test for outbox pattern (crash recovery scenario)
+
+4. **Kafka Consumer Integration**
+   - [ ] Create `@KafkaListener` consumer class subscribed to message topic
+   - [ ] Parse `MessageEvent` from Kafka records
+   - [ ] Look up channel members from database (or cache)
+   - [ ] Call `ConnectionRegistry.broadcast()` to send to local WebSocket connections
+   - [ ] Handle deserialization errors gracefully
+   - [ ] Configure consumer group ID (all instances same group = compete for messages)
+   - [ ] Add integration test with multiple app instances verifying cross-instance delivery
+
+5. **Message Fanout Validation**
+   - [ ] Add end-to-end test: Alice on instance 1, Bob on instance 2, verify Bob receives Alice's message
+   - [ ] Test message ordering within single channel
+   - [ ] Test concurrent messages from multiple senders
+   - [ ] Verify all connected users in a channel receive broadcasts
+
+### Phase 2: Resilience & Production Readiness
+
+6. **Session State Management (Redis)**
+   - [ ] Add Redis dependency (`micronaut-redis`)
+   - [ ] Add Redis container to docker-compose and integration tests
+   - [ ] Create `SessionStore` abstraction (interface: register, lookup, remove)
+   - [ ] Implement Redis-backed session store with TTL
+   - [ ] Store: userId -> {instanceId, sessionId, lastHeartbeat, channelIds}
+   - [ ] Update session registry to write through to Redis
+   - [ ] Add background job to expire stale sessions
+   - [ ] Add integration tests for session state persistence
+
+7. **Health Checks & Circuit Breakers**
+   - [ ] Implement `/health` endpoint exposing: DB connection, Kafka connectivity, Redis connection
+   - [ ] Configure Envoy health checks pointing to `/health`
+   - [ ] Add graceful shutdown hook to drain connections before terminating
+   - [ ] Implement circuit breaker for Kafka producer (fail open if Kafka down)
+   - [ ] Add metrics endpoint (`/metrics`) with Micrometer
+   - [ ] Expose: active connections count, messages sent/received, DB query times
+
+8. **Session Failover & Redistribution**
+   - [ ] Design failover strategy: active-active or active-passive?
+   - [ ] Implement Envoy health-check based rerouting (remove unhealthy instances from ring)
+   - [ ] Add client-side reconnection logic (exponential backoff)
+   - [ ] Implement server-sent ping/pong for connection liveness
+   - [ ] Test scenario: kill instance, verify clients reconnect to healthy instance
+   - [ ] Consider: session migration (hard) vs. client reconnection (simpler)
+
+9. **Message Ordering Guarantees**
+   - [ ] Document ordering semantics: per-channel total order vs. causal order
+   - [ ] Kafka topic partitioning: partition by `channel_id` for per-channel ordering
+   - [ ] Add message sequence numbers or vector clocks if needed
+   - [ ] Test concurrent message delivery maintains order within channel
+   - [ ] Add integration test with multiple senders in same channel
+
+10. **Error Handling & Retries**
+    - [ ] Add retry logic for transient DB failures (Micronaut Retry annotation)
+    - [ ] Implement exponential backoff for Kafka publish failures
+    - [ ] Add dead letter queue for undeliverable messages
+    - [ ] Gracefully handle WebSocket send failures (log + continue)
+    - [ ] Return error messages to sender if message rejected
+    - [ ] Add integration tests for error scenarios
+
+### Phase 3: Testing & Observability
+
+11. **End-to-End Multi-Instance Tests**
+    - [ ] Extend `IntegrationInfraExtension` to support N app instances
+    - [ ] Test: 3 instances, 10 users distributed across instances, broadcast to all
+    - [ ] Test: instance crash during message send, verify recovery
+    - [ ] Test: network partition between app and Kafka, verify message buffering
+    - [ ] Performance test: 1000 concurrent connections, measure latency
+
+12. **Message Persistence Tests**
+    - [ ] Test: send message, verify written to Citus with correct channel_id
+    - [ ] Test: query message history API returns messages in order
+    - [ ] Test: distributed query across Citus workers returns correct results
+    - [ ] Test: foreign key constraints enforced (invalid user_id rejected)
+
+13. **Distributed Transaction Tests**
+    - [ ] Test: outbox pattern - crash after DB write but before Kafka publish, verify eventual publish
+    - [ ] Test: idempotency - duplicate Kafka message doesn't create duplicate DB entry
+    - [ ] Test: transaction rollback on Kafka publish failure
+
+14. **Failover Scenario Tests**
+    - [ ] Test: graceful shutdown - connections drained, no message loss
+    - [ ] Test: ungraceful shutdown (SIGKILL) - clients reconnect, Redis state preserved
+    - [ ] Test: Envoy removes unhealthy instance from ring hash
+    - [ ] Test: session state survives app restart (via Redis)
+
+15. **Distributed Tracing**
+    - [ ] Add OpenTelemetry dependencies
+    - [ ] Add Jaeger container to docker-compose
+    - [ ] Configure trace context propagation: WebSocket -> DB -> Kafka -> Consumer -> WebSocket
+    - [ ] Add trace IDs to logs
+    - [ ] Create dashboard showing end-to-end message latency
+
+16. **Load Testing**
+    - [ ] Create JMeter or Gatling test suite
+    - [ ] Test: 10,000 concurrent WebSocket connections
+    - [ ] Test: 1,000 messages/second throughput
+    - [ ] Measure: p50, p95, p99 latency for message delivery
+    - [ ] Identify bottlenecks (DB, Kafka, network, etc.)
+
+### Phase 4: Features & Deployment
+
+17. **Message History API**
+    - [ ] Create REST endpoint: `GET /channels/{channelId}/messages?limit=50&before={messageId}`
+    - [ ] Implement pagination using Citus distributed queries
+    - [ ] Add cursor-based pagination for efficient traversal
+    - [ ] Return messages in descending order (newest first)
+    - [ ] Add authentication check (user must be member of channel)
+    - [ ] Add integration test for message history retrieval
+
+18. **Channel Membership Management**
+    - [ ] Create `channel_members` table (distributed by channel_id)
+    - [ ] Create REST endpoints: join channel, leave channel, list members
+    - [ ] Enforce authorization: only members can send/receive messages in channel
+    - [ ] Broadcast membership changes to connected users
+    - [ ] Add integration tests for membership operations
+
+19. **Kubernetes Deployment Manifests**
+    - [ ] Create `k8s/` directory with manifests
+    - [ ] Deployment: Micronaut app with 3 replicas
+    - [ ] Service: ClusterIP for app, LoadBalancer for Envoy
+    - [ ] ConfigMaps: Envoy config, app config
+    - [ ] Secrets: DB credentials, Kafka credentials, Keycloak secrets
+    - [ ] StatefulSet: Kafka cluster (or use managed Kafka)
+    - [ ] PersistentVolumeClaims: Citus data, Kafka logs
+    - [ ] Ingress: TLS termination, routing rules
+    - [ ] HorizontalPodAutoscaler: scale based on CPU/memory/connection count
+    - [ ] NetworkPolicy: restrict traffic between services
+
+20. **Production Monitoring & Alerting**
+    - [ ] Set up Prometheus for metrics collection
+    - [ ] Set up Grafana dashboards: connection count, message throughput, latency percentiles, error rates
+    - [ ] Configure alerts: high error rate, high latency, instance down, DB connection failures
+    - [ ] Add PagerDuty/Opsgenie integration for critical alerts
+    - [ ] Document runbooks for common failure scenarios
+
+21. **Documentation & Operations**
+    - [ ] Write deployment guide for Digital Ocean Kubernetes
+    - [ ] Document monitoring and alerting setup
+    - [ ] Create troubleshooting guide for common issues
+    - [ ] Document backup and disaster recovery procedures
+    - [ ] Write performance tuning guide (Kafka, Citus, connection limits)
+
+### Priority Recommendation
+
+**Start with Phase 1 in order** (items 1-5). You cannot have reliable distributed messaging without:
+1. Persisting messages to Citus (enables history, recovery)
+2. Publishing to Kafka (enables cross-instance fanout)
+3. Transactional outbox (guarantees message delivery)
+4. Consuming from Kafka (receives messages from other instances)
+5. Testing it end-to-end (validates the entire flow)
+
+Once Phase 1 is complete, the application will correctly distribute messages across all instances. Phase 2 adds production resilience, Phase 3 adds confidence through testing, and Phase 4 adds deployment readiness.
+
+### Design Decisions Requiring Clarity
+
+Before starting Phase 2, clarify these design choices:
+
+1. **Session Failover Strategy:** Active-active (stateless reconnect) or active-passive (session migration)?
+2. **Message Ordering:** Per-channel strict ordering or eventual consistency with causal ordering?
+3. **Kafka Topology:** Single topic with channel_id partitioning, or topic-per-channel?
+4. **Redis vs. Database for Session State:** Redis for speed or database for durability?
+5. **Graceful Shutdown:** Drain connections (wait for idle) or force close with reconnect?
+
 ## Docker Compose Services
 
 When running `./gradlew dockerComposeUp`, the following services start:
