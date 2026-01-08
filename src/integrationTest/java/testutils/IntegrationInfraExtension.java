@@ -104,9 +104,8 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
     private GenericContainer<?> envoy;
 
     // Citus cluster
-    private GenericContainer<?> citusWorker1;
-    private GenericContainer<?> citusWorker2;
-    private GenericContainer<?> citusWorker3;
+    private static final int CITUS_WORKER_COUNT = 3;
+    private java.util.List<GenericContainer<?>> citusWorkers;
     private GenericContainer<?> citusMaster;
 
     private String keycloakBaseUrl;
@@ -155,6 +154,14 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
       return keycloak;
     }
 
+    public GenericContainer<?> citusMasterContainer() {
+      return citusMaster;
+    }
+
+    public java.util.List<GenericContainer<?>> citusWorkerContainers() {
+      return citusWorkers;
+    }
+
     // -------------------------
     // Startup
     // -------------------------
@@ -173,68 +180,32 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
       String citusPassword = "citus";
       String citusDb = "citus";
 
-      // Worker 1
-      citusWorker1 =
-          new GenericContainer<>("citusdata/citus:postgres_16")
-              .withNetwork(network)
-              .withNetworkAliases("citus_worker_1")
-              .withExposedPorts(5432)
-              .withEnv("POSTGRES_USER", citusUser)
-              .withEnv("POSTGRES_PASSWORD", citusPassword)
-              .withEnv("POSTGRES_DB", citusDb)
-              .withCopyFileToContainer(
-                  MountableFile.forHostPath(dbInitRunner), "/docker-entrypoint-initdb.d")
-              .withCopyFileToContainer(MountableFile.forHostPath(dbInitCommon), "/init-common")
-              .withCopyFileToContainer(MountableFile.forHostPath(dbInitMaster), "/init-master")
-              .waitingFor(Wait.forListeningPort().withStartupTimeout(STARTUP_TIMEOUT));
-      citusWorker1.start();
+      // Create and start workers
+      citusWorkers = new java.util.ArrayList<>();
+      for (int i = 1; i <= CITUS_WORKER_COUNT; i++) {
+        GenericContainer<?> worker =
+            createCitusWorker(
+                "citus_worker_" + i,
+                citusUser,
+                citusPassword,
+                citusDb,
+                dbInitRunner,
+                dbInitCommon,
+                dbInitMaster);
+        worker.start();
+        citusWorkers.add(worker);
+      }
 
-      // Worker 2
-      citusWorker2 =
-          new GenericContainer<>("citusdata/citus:postgres_16")
-              .withNetwork(network)
-              .withNetworkAliases("citus_worker_2")
-              .withExposedPorts(5432)
-              .withEnv("POSTGRES_USER", citusUser)
-              .withEnv("POSTGRES_PASSWORD", citusPassword)
-              .withEnv("POSTGRES_DB", citusDb)
-              .withCopyFileToContainer(
-                  MountableFile.forHostPath(dbInitRunner), "/docker-entrypoint-initdb.d")
-              .withCopyFileToContainer(MountableFile.forHostPath(dbInitCommon), "/init-common")
-              .withCopyFileToContainer(MountableFile.forHostPath(dbInitMaster), "/init-master")
-              .waitingFor(Wait.forListeningPort().withStartupTimeout(STARTUP_TIMEOUT));
-      citusWorker2.start();
-
-      // Worker 3
-      citusWorker3 =
-          new GenericContainer<>("citusdata/citus:postgres_16")
-              .withNetwork(network)
-              .withNetworkAliases("citus_worker_3")
-              .withExposedPorts(5432)
-              .withEnv("POSTGRES_USER", citusUser)
-              .withEnv("POSTGRES_PASSWORD", citusPassword)
-              .withEnv("POSTGRES_DB", citusDb)
-              .withCopyFileToContainer(
-                  MountableFile.forHostPath(dbInitRunner), "/docker-entrypoint-initdb.d")
-              .withCopyFileToContainer(MountableFile.forHostPath(dbInitCommon), "/init-common")
-              .withCopyFileToContainer(MountableFile.forHostPath(dbInitMaster), "/init-master")
-              .waitingFor(Wait.forListeningPort().withStartupTimeout(STARTUP_TIMEOUT));
-      citusWorker3.start();
-
-      // Master (coordinator) - depends on workers being ready
+      // Start master (coordinator) - depends on workers being ready
       citusMaster =
-          new GenericContainer<>("citusdata/citus:postgres_16")
-              .withNetwork(network)
-              .withNetworkAliases("citus_master")
-              .withExposedPorts(5432)
-              .withEnv("POSTGRES_USER", citusUser)
-              .withEnv("POSTGRES_PASSWORD", citusPassword)
-              .withEnv("POSTGRES_DB", citusDb)
-              .withCopyFileToContainer(
-                  MountableFile.forHostPath(dbInitRunner), "/docker-entrypoint-initdb.d")
-              .withCopyFileToContainer(MountableFile.forHostPath(dbInitCommon), "/init-common")
-              .withCopyFileToContainer(MountableFile.forHostPath(dbInitMaster), "/init-master")
-              .waitingFor(Wait.forListeningPort().withStartupTimeout(STARTUP_TIMEOUT));
+          createCitusWorker(
+              "citus_master",
+              citusUser,
+              citusPassword,
+              citusDb,
+              dbInitRunner,
+              dbInitCommon,
+              dbInitMaster);
       citusMaster.start();
 
       // --- Postgres for Keycloak ---
@@ -280,12 +251,13 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
               .withNetwork(network)
               .withNetworkAliases("messaging_app")
               .withExposedPorts(8080)
-              .withEnv("MICRONAUT_ENVIRONMENTS", "test")
+              .withEnv("MICRONAUT_ENVIRONMENTS", "dev")
               .withEnv("MICRONAUT_SERVER_HOST", "0.0.0.0")
               .withEnv("MICRONAUT_SERVER_PORT", "8080")
               .withEnv("CITUS_USER", citusUser)
               .withEnv("CITUS_PASSWORD", citusPassword)
               .withEnv("CITUS_DB", citusDb)
+              .dependsOn(citusMaster)
               .waitingFor(
                   Wait.forHttp("/health").forPort(8080).withStartupTimeout(Duration.ofMinutes(2)));
       messagingApp.start();
@@ -319,6 +291,32 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
       envoy.start();
       envoyBaseUrl = "http://" + envoy.getHost() + ":" + envoy.getMappedPort(10000);
       envoyAdminBaseUrl = "http://" + envoy.getHost() + ":" + envoy.getMappedPort(9901);
+    }
+
+    // -------------------------
+    // Helpers: Citus cluster setup
+    // -------------------------
+
+    private GenericContainer<?> createCitusWorker(
+        String workerName,
+        String citusUser,
+        String citusPassword,
+        String citusDb,
+        java.nio.file.Path dbInitRunner,
+        java.nio.file.Path dbInitCommon,
+        java.nio.file.Path dbInitMaster) {
+      return new GenericContainer<>("citusdata/citus:postgres_16")
+          .withNetwork(network)
+          .withNetworkAliases(workerName)
+          .withExposedPorts(5432)
+          .withEnv("POSTGRES_USER", citusUser)
+          .withEnv("POSTGRES_PASSWORD", citusPassword)
+          .withEnv("POSTGRES_DB", citusDb)
+          .withCopyFileToContainer(
+              MountableFile.forHostPath(dbInitRunner), "/docker-entrypoint-initdb.d")
+          .withCopyFileToContainer(MountableFile.forHostPath(dbInitCommon), "/init-common")
+          .withCopyFileToContainer(MountableFile.forHostPath(dbInitMaster), "/init-master")
+          .waitingFor(Wait.forListeningPort().withStartupTimeout(STARTUP_TIMEOUT));
     }
 
     // -------------------------
@@ -528,9 +526,9 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
 
       // Stop Citus cluster (master first, then workers)
       if (citusMaster != null) citusMaster.stop();
-      if (citusWorker1 != null) citusWorker1.stop();
-      if (citusWorker2 != null) citusWorker2.stop();
-      if (citusWorker3 != null) citusWorker3.stop();
+      if (citusWorkers != null) {
+        citusWorkers.forEach(GenericContainer::stop);
+      }
 
       if (network != null) network.close();
     }
