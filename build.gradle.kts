@@ -176,7 +176,7 @@ dependencies {
     // Application
     // ----------------------------
     implementation("io.micronaut.serde:micronaut-serde-jackson")
-    implementation("io.micronaut:micronaut-jackson-databind") // Provides ObjectMapper bean
+    implementation("io.micronaut:micronaut-jackson-databind")
     implementation("io.micronaut:micronaut-http-server-netty")
     implementation("io.micronaut:micronaut-management")
     implementation("io.micronaut:micronaut-websocket")

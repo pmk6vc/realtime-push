@@ -7,6 +7,7 @@ import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
 import util.HeaderUserIdExtractor;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 @MicronautTest(environments = "test")
 class WiringSmokeTest {
@@ -19,8 +20,6 @@ class WiringSmokeTest {
     assertTrue(ctx.containsBean(ConnectionRegistry.class));
     assertTrue(ctx.containsBean(HeaderUserIdExtractor.class));
     assertTrue(ctx.containsBean(MessageRepository.class));
-    assertTrue(
-        ctx.containsBean(com.fasterxml.jackson.databind.ObjectMapper.class),
-        "ObjectMapper should be available");
+    assertTrue(ctx.containsBean(ObjectMapper.class));
   }
 }
