@@ -23,6 +23,14 @@ public record Message(
     return id.messageId();
   }
 
+  /**
+   * Creates a new message with application-generated timestamp.
+   *
+   * <p>Uses Instant.now() which:
+   * - Returns UTC timestamp (no timezone conversion needed)
+   * - Uses system clock (should be NTP-synced in production)
+   * - Gives application full control over timestamp generation
+   */
   public static Message create(UUID channelId, UUID senderUserId, String body) {
     MessageId id = new MessageId(channelId, UUID.randomUUID());
     return new Message(id, senderUserId, Instant.now(), body);

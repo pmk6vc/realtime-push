@@ -15,8 +15,9 @@ import messaging.persistence.MessageRepository;
 public class MockMessageRepository implements MessageRepository {
 
   @Override
-  public <S extends Message> S save(S entity) {
+  public Message save(Message entity) {
     // No-op for unit tests - we're only testing behavior, not persistence
+    // Return the entity as-is (sentAt will be null, which is fine for mocks)
     return entity;
   }
 
