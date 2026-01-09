@@ -125,4 +125,36 @@ class MessagingServerComponentTest {
       }
     }
   }
+
+  @Test
+  void onMessage_invalidJsonReturnsError() throws Exception {
+    MicronautTestWebSocketClient aliceClient =
+        connectAndAwaitAck(wsClient, chatUri(), Map.of(USER_HEADER, ALICE_ID));
+    try (aliceClient) {
+      // Send invalid message (not JSON)
+      aliceClient.send("This is not JSON");
+
+      // Should receive error response
+      String errorResponse = aliceClient.getReceivedMessages().poll(250, TimeUnit.MILLISECONDS);
+      assertNotNull(errorResponse, "Should receive error response");
+      assertTrue(errorResponse.contains("\"type\":\"error\""));
+      assertTrue(errorResponse.contains("Invalid message format"));
+    }
+  }
+
+  @Test
+  void onMessage_missingChannelIdReturnsError() throws Exception {
+    MicronautTestWebSocketClient aliceClient =
+        connectAndAwaitAck(wsClient, chatUri(), Map.of(USER_HEADER, ALICE_ID));
+    try (aliceClient) {
+      // Send message with missing channelId
+      aliceClient.send("{\"text\":\"Hello\"}");
+
+      // Should receive error response (may take longer due to JSON parsing)
+      String errorResponse = aliceClient.getReceivedMessages().poll(1, TimeUnit.SECONDS);
+      assertNotNull(errorResponse, "Should receive error response for missing channelId");
+      assertTrue(errorResponse.contains("\"type\":\"error\""));
+      assertTrue(errorResponse.contains("Invalid message format"));
+    }
+  }
 }

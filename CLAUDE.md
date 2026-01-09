@@ -374,6 +374,223 @@ Before starting Phase 2, clarify these design choices:
 4. **Redis vs. Database for Session State:** Redis for speed or database for durability?
 5. **Graceful Shutdown:** Drain connections (wait for idle) or force close with reconnect?
 
+---
+
+## Code Quality & Production Hardening TODO
+
+This section tracks code quality improvements identified during code review (2026-01-09). These should be addressed alongside the architectural roadmap above.
+
+### 🚨 CRITICAL - Security & Correctness
+
+**CR-1: Replace Manual JSON Serialization** (`MessagingServer.java:51-57, 135-147, 115-117`)
+- [ ] Create POJO classes for all message types (AckMessage, BroadcastMessage, ErrorMessage)
+- [ ] Inject ObjectMapper into MessagingServer
+- [ ] Replace all manual JSON string concatenation with `objectMapper.writeValueAsString()`
+- [ ] Remove manual `escapeJson()` method (line 149-154)
+- [ ] Add unit tests verifying proper escaping of special characters
+- **Risk**: Current escaping incomplete - missing Unicode control characters, tabs, etc.
+- **Impact**: Potential injection vulnerability
+
+**CR-2: Add Input Validation and Rate Limiting** (`MessagingServer.java:72-113`)
+- [ ] Add max message size validation (4KB recommended)
+- [ ] Implement rate limiter per user (10 messages/second recommended)
+- [ ] Use Guava LoadingCache or similar for rate tracking
+- [ ] Add channel membership validation before allowing message send
+- [ ] Create `ChannelRepository` with `isMember(channelId, userId)` method
+- [ ] Return appropriate error codes for each validation failure
+- **Risk**: No abuse prevention - single user can spam unlimited messages
+
+**CR-3: Fix Transaction Boundary** (`MessageRepository.java:18-34`)
+- [ ] Add `@Transactional` annotation to `insert()` method
+- [ ] Create custom `DatabaseException` extending RuntimeException
+- [ ] Include context in exception message (channelId, messageId)
+- [ ] Add retry logic with `@Retryable` for transient failures
+- [ ] Distinguish between retriable (connection) and non-retriable (constraint violation) errors
+- **Risk**: No transaction management for future outbox pattern implementation
+
+### ⚠️ HIGH PRIORITY - Observability & Resilience
+
+**CR-4: Implement Comprehensive Health Checks**
+- [ ] Create `HealthController` with `/health` endpoint
+- [ ] Add database connectivity check using `Connection.isValid(2)`
+- [ ] Add method to `ConnectionRegistry`: `getActiveConnectionCount()`
+- [ ] Return HTTP 200 if healthy, 503 if unhealthy
+- [ ] Configure Envoy health checks to use this endpoint
+- [ ] Add Kubernetes liveness and readiness probes in deployment manifests
+- **Gap**: Current `/health` doesn't verify database connectivity
+
+**CR-5: Add Metrics and Monitoring** (`MessagingServer.java`)
+- [ ] Add Micrometer dependencies: `micronaut-micrometer-core`, `micronaut-micrometer-registry-prometheus`
+- [ ] Inject `MeterRegistry` into MessagingServer
+- [ ] Add counters: `messages.received`, `messages.persisted`, `messages.failures`
+- [ ] Add timer: `messages.persistence.time`
+- [ ] Expose `/metrics` endpoint for Prometheus scraping
+- [ ] Create Grafana dashboard with these metrics
+- **Gap**: Zero visibility into system behavior
+
+**CR-6: Externalize Configuration Constants**
+- [ ] Create `@ConfigurationProperties("messaging")` class: `MessagingConfig`
+- [ ] Extract: `MAX_MESSAGE_SIZE`, `MAX_MESSAGES_PER_SECOND`, `SESSION_TIMEOUT`
+- [ ] Add validation annotations: `@Min`, `@Max`, `@NotNull`
+- [ ] Update `application.yaml` with default values
+- [ ] Document all configuration options in CLAUDE.md
+- **Gap**: Magic numbers hardcoded throughout codebase
+
+**CR-7: Fix Potential Memory Leak** (`ConnectionRegistry.java:33-54`)
+- [ ] Add `ScheduledExecutorService` to ConnectionRegistry
+- [ ] Create cleanup task: `userSessionMap.entrySet().removeIf(entry -> !entry.getValue().isOpen())`
+- [ ] Schedule cleanup every 60 seconds using `@PostConstruct`
+- [ ] Add `@PreDestroy` to shutdown executor gracefully
+- [ ] Add debug logging showing active session count after cleanup
+- **Risk**: Closed sessions remain in map indefinitely
+
+### 📋 MEDIUM PRIORITY - Code Quality
+
+**CR-8: Add Structured Logging with MDC**
+- [ ] Import `org.slf4j.MDC` in MessagingServer
+- [ ] Set MDC values in `@OnOpen`: userId, sessionId, correlationId
+- [ ] Clear MDC in finally block to prevent leaks
+- [ ] Update `logback.xml` pattern to include `%X{userId}` and `%X{correlationId}`
+- [ ] Propagate correlationId through entire request lifecycle
+- **Benefit**: Easier log correlation and debugging
+
+**CR-9: Implement Idempotency Keys**
+- [ ] Add `idempotencyKey` field to `IncomingMessage` record (optional)
+- [ ] Create migration: Add `idempotency_key` column to messages table
+- [ ] Create unique index: `idx_messages_idempotency ON messages(sender_user_id, idempotency_key)`
+- [ ] Update `MessageRepository.insert()` to use `ON CONFLICT DO NOTHING`
+- [ ] Return boolean indicating if insert succeeded or was duplicate
+- [ ] Send different response to client for duplicate vs new message
+- **Benefit**: Prevents duplicate messages on client retry
+
+**CR-10: Add Circuit Breaker for Database**
+- [ ] Add Resilience4j dependencies: `resilience4j-circuitbreaker`, `resilience4j-micronaut`
+- [ ] Create `ResilientMessageRepository` wrapping `MessageRepository`
+- [ ] Configure circuit breaker: 50% failure threshold, 30s open state, 10-call sliding window
+- [ ] Add fallback behavior: queue message in memory for retry
+- [ ] Expose circuit breaker state via metrics
+- [ ] Add integration test simulating database failure
+- **Benefit**: Prevents cascading failures when database is down
+
+**CR-11: Improve Error Response Structure**
+- [ ] Create `ErrorResponse` record with fields: type, code, message, timestamp
+- [ ] Define error codes: `RATE_LIMIT_EXCEEDED`, `MESSAGE_TOO_LARGE`, `NOT_CHANNEL_MEMBER`, etc.
+- [ ] Update `sendErrorResponse()` to use structured format
+- [ ] Document all error codes in protocol documentation
+- [ ] Add client-side error code handling examples
+- **Benefit**: Clients can programmatically handle specific error types
+
+### 🏗️ ARCHITECTURE IMPROVEMENTS
+
+**CR-12: Introduce Domain Events Pattern**
+- [ ] Create `MessageReceivedEvent` record
+- [ ] Create `MessageEventPublisher` using `ApplicationEventPublisher`
+- [ ] Create `MessagePersistenceListener` with `@EventListener` and `@Async`
+- [ ] Create `MessageBroadcastListener` with `@EventListener` and `@Async`
+- [ ] Refactor `MessagingServer.onSessionMessage()` to publish event instead of direct calls
+- [ ] Add integration tests verifying event handlers execute
+- **Benefit**: Loose coupling, easier to add new handlers (analytics, spam filtering)
+
+**CR-13: Create Value Objects for Type Safety**
+- [ ] Create `UserId` record wrapping UUID with `fromString()` factory
+- [ ] Create `ChannelId` record wrapping UUID
+- [ ] Create `MessageId` record wrapping UUID with `generate()` factory
+- [ ] Update all method signatures to use value objects instead of raw UUIDs/Strings
+- [ ] Update Jackson configuration to serialize/deserialize value objects
+- [ ] Refactor tests to use value objects
+- **Benefit**: Compile-time safety, can't mix up different ID types
+
+**CR-14: Extract Broadcast Strategy Pattern**
+- [ ] Create `MessageBroadcastStrategy` interface with `broadcast()` method
+- [ ] Create `LocalBroadcastStrategy` with `@Requires(env = "dev")`
+- [ ] Create `KafkaBroadcastStrategy` with `@Requires(env = "prod")` (placeholder for Phase 1)
+- [ ] Inject strategy into MessagingServer via interface
+- [ ] Add integration tests for each strategy
+- **Benefit**: Easy environment-specific behavior without code changes
+
+### 🧪 TESTING IMPROVEMENTS
+
+**CR-15: Add Chaos Engineering Tests**
+- [ ] Test: `messageDelivery_survivesDatabaseRestart()` - kill/restart database during message send
+- [ ] Test: `messageDelivery_survivesInstanceCrash()` - kill app instance, verify reconnection
+- [ ] Test: `messageDelivery_survivesNetworkPartition()` - simulate network issues
+- [ ] Test: `connectionRegistry_handlesThreadInterruption()` - verify graceful handling
+- [ ] Use Testcontainers Toxiproxy for network chaos
+- **Benefit**: Confidence in failure scenarios
+
+**CR-16: Add WebSocket Protocol Contract Tests**
+- [ ] Create JSON schema files for each message type (ack, message, error)
+- [ ] Add JSON schema validation in tests
+- [ ] Test all required fields present
+- [ ] Test no unexpected fields present
+- [ ] Test field types correct (string, number, etc.)
+- [ ] Generate protocol documentation from schemas
+- **Benefit**: Prevent accidental protocol breaking changes
+
+**CR-17: Add Performance Benchmarks**
+- [ ] Add JMH dependency for micro-benchmarks
+- [ ] Benchmark: message parsing throughput (messages/second)
+- [ ] Benchmark: broadcast latency percentiles (p50, p95, p99)
+- [ ] Benchmark: ConnectionRegistry lookup performance with 10k sessions
+- [ ] Set performance regression thresholds in CI
+- [ ] Track benchmarks over time
+- **Benefit**: Catch performance regressions early
+
+### 📊 OPERATIONAL IMPROVEMENTS
+
+**CR-18: Implement Graceful Shutdown**
+- [ ] Create `GracefulShutdown` singleton with `@PreDestroy` method
+- [ ] Send warning message to all connected clients: "Server restarting in 10 seconds"
+- [ ] Wait 10 seconds for messages to be sent
+- [ ] Add method to ConnectionRegistry: `closeAll(CloseReason)`
+- [ ] Close all connections with `NORMAL` close reason
+- [ ] Add integration test verifying graceful shutdown
+- **Gap**: Abrupt connection close on shutdown
+
+**CR-19: Add Configuration Validation**
+- [ ] Add `@Validated` to `MessagingConfig` class
+- [ ] Add constraints: `@Min(1)`, `@Max(1_000_000)` for maxMessageSize
+- [ ] Add constraints: `@Min(1)`, `@Max(1000)` for maxMessagesPerSecond
+- [ ] Test app fails to start with invalid configuration
+- [ ] Document valid configuration ranges
+- **Benefit**: Fail fast on misconfiguration
+
+### 📖 DOCUMENTATION
+
+**CR-20: Document WebSocket Protocol**
+- [ ] Create `docs/websocket-protocol.md` file
+- [ ] Document all client→server message formats with JSON examples
+- [ ] Document all server→client message formats with JSON examples
+- [ ] Document error codes and their meanings
+- [ ] Add sequence diagrams for common flows (connect, send message, error)
+- [ ] Add client implementation examples (JavaScript, Java)
+- [ ] Version the protocol (e.g., v1) for future changes
+- **Gap**: Protocol only documented in code comments
+
+### Implementation Priority
+
+**Week 1** (Security & Critical Bugs):
+- CR-1: Replace JSON serialization
+- CR-2: Add rate limiting
+- CR-3: Fix transaction boundary
+- CR-4: Add health checks
+
+**Week 2** (Observability):
+- CR-5: Add metrics
+- CR-6: Externalize config
+- CR-7: Fix memory leak
+- CR-8: Structured logging
+
+**Week 3** (Resilience):
+- CR-9: Idempotency keys
+- CR-10: Circuit breakers
+- CR-11: Better error messages
+- CR-18: Graceful shutdown
+
+**Later** (Architecture & Testing):
+- CR-12 through CR-17: Domain events, value objects, chaos tests
+- CR-19 through CR-20: Config validation, documentation
+
 ## Docker Compose Services
 
 When running `./gradlew dockerComposeUp`, the following services start:
