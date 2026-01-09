@@ -9,6 +9,8 @@ import io.micronaut.websocket.annotation.*;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import messaging.persistence.Message;
+import messaging.persistence.MessageRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import util.HeaderUserIdExtractor;
@@ -104,20 +106,20 @@ public class MessagingServer {
       }
 
       // Create and persist message to database
-      Message persistedMessage =
+      Message messageToSave =
           Message.create(
               incomingMessage.channelId(), UUID.fromString(userId), incomingMessage.text());
-      messageRepository.insert(persistedMessage);
+      Message savedMessage = messageRepository.save(messageToSave);
 
       LOG.info(
           "Persisted message {} to channel {} from user {}",
-          persistedMessage.messageId(),
-          persistedMessage.channelId(),
+          savedMessage.messageId(),
+          savedMessage.channelId(),
           userId);
 
       // TODO: Write to outbox table for Kafka fanout (Phase 1, item 3)
       // For now, broadcast locally to other users on this server instance
-      String broadcastPayload = buildBroadcastPayload(persistedMessage);
+      String broadcastPayload = buildBroadcastPayload(savedMessage);
       userConnRegistry.broadcastPayloadWithExclusions(broadcastPayload, Set.of(userId));
 
     } catch (JsonProcessingException e) {

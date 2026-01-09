@@ -161,11 +161,13 @@ dependencies {
     // ----------------------------
     annotationProcessor("io.micronaut:micronaut-http-validation")
     annotationProcessor("io.micronaut.serde:micronaut-serde-processor")
+    annotationProcessor("io.micronaut.data:micronaut-data-processor")
 
     // ----------------------------
     // Database
     // ----------------------------
     implementation("io.micronaut.sql:micronaut-jdbc-hikari")
+    implementation("io.micronaut.data:micronaut-data-jdbc")
     implementation("io.micronaut.flyway:micronaut-flyway")
     // Pin Flyway to a modern version that understands newer PG patch versions
     runtimeOnly("org.flywaydb:flyway-core:11.20.0")
