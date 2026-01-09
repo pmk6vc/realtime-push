@@ -9,6 +9,8 @@ import io.micronaut.websocket.annotation.*;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import messaging.persistence.Message;
+import messaging.persistence.MessageRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import util.HeaderUserIdExtractor;

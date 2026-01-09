@@ -5,9 +5,9 @@ import io.micronaut.context.annotation.Requires;
 import jakarta.inject.Singleton;
 import java.util.List;
 import java.util.Optional;
-import java.util.UUID;
-import messaging.Message;
-import messaging.MessageRepository;
+import messaging.persistence.Message;
+import messaging.persistence.MessageId;
+import messaging.persistence.MessageRepository;
 
 @Singleton
 @Replaces(MessageRepository.class)
@@ -36,12 +36,12 @@ public class MockMessageRepository implements MessageRepository {
   }
 
   @Override
-  public Optional<Message> findById(UUID uuid) {
+  public Optional<Message> findById(MessageId messageId) {
     return Optional.empty();
   }
 
   @Override
-  public boolean existsById(UUID uuid) {
+  public boolean existsById(MessageId messageId) {
     return false;
   }
 
@@ -56,7 +56,7 @@ public class MockMessageRepository implements MessageRepository {
   }
 
   @Override
-  public void deleteById(UUID uuid) {
+  public void deleteById(MessageId messageId) {
     // No-op
   }
 
