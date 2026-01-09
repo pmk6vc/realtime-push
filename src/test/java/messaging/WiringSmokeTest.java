@@ -2,12 +2,12 @@ package messaging;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micronaut.context.ApplicationContext;
 import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
 import util.HeaderUserIdExtractor;
-import com.fasterxml.jackson.databind.ObjectMapper;
 
 @MicronautTest(environments = "test")
 class WiringSmokeTest {
