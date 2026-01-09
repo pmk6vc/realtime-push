@@ -74,12 +74,34 @@ public class MessagingServer {
     String userId = session.get(ATTR_USER_ID, String.class, null);
     if (userId == null) {
       LOG.warn("Received message from session without userId: {}", session.getId());
+      sendErrorResponse(session, "Missing user ID. Please reconnect.");
+      return;
+    }
+
+    // Validate userId is a valid UUID
+    try {
+      UUID.fromString(userId);
+    } catch (IllegalArgumentException e) {
+      LOG.error("Invalid userId format: {}", userId, e);
+      sendErrorResponse(session, "Invalid user ID format");
       return;
     }
 
     try {
       // Parse incoming message JSON
       IncomingMessage incomingMessage = objectMapper.readValue(message, IncomingMessage.class);
+
+      // Validate required fields
+      if (incomingMessage.channelId() == null) {
+        sendErrorResponse(
+            session,
+            "Invalid message format. Expected JSON: {\"channelId\":\"<uuid>\",\"text\":\"<message>\"}");
+        return;
+      }
+      if (incomingMessage.text() == null || incomingMessage.text().isBlank()) {
+        sendErrorResponse(session, "Message text cannot be empty");
+        return;
+      }
 
       // Create and persist message to database
       Message persistedMessage =
@@ -103,9 +125,6 @@ public class MessagingServer {
       sendErrorResponse(
           session,
           "Invalid message format. Expected JSON: {\"channelId\":\"<uuid>\",\"text\":\"<message>\"}");
-    } catch (IllegalArgumentException e) {
-      LOG.error("Invalid userId format for user {}: {}", userId, e.getMessage(), e);
-      sendErrorResponse(session, "Invalid user ID format");
     } catch (Exception e) {
       LOG.error("Failed to persist message from user {}: {}", userId, message, e);
       sendErrorResponse(session, "Failed to send message. Please try again.");

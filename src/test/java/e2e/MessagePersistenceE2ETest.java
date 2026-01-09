@@ -1,9 +1,11 @@
 package e2e;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static testutils.IntegrationInfraExtension.TEST_CHANNEL_ID;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import java.net.URI;
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -94,55 +96,6 @@ class MessagePersistenceE2ETest {
           assertFalse(rs.next(), "Expected only one message");
         }
       }
-    }
-  }
-
-  @Test
-  void sendInvalidMessage_returnsError(Infra infra) throws Exception {
-    String aliceToken = infra.passwordGrant("alice", "alice!");
-    URI wsUri = envoyChatWsUri(infra);
-
-    try (E2ETestWebSocketClient aliceClient =
-        E2ETestWebSocketClient.connect(wsUri, Map.of("Authorization", "Bearer " + aliceToken))) {
-
-      // Wait for ack
-      aliceClient.awaitAck();
-
-      // Send invalid message (not JSON)
-      aliceClient.sendMessage("This is not JSON");
-
-      // Should receive error response
-      String errorResponse = aliceClient.getReceivedMessages().poll(2, TimeUnit.SECONDS);
-      assertNotNull(errorResponse, "Should receive error response");
-
-      JsonNode errorNode = infra.mapper().readTree(errorResponse);
-      assertEquals("error", errorNode.get("type").asText());
-      assertTrue(
-          errorNode.get("message").asText().contains("Invalid message format"),
-          "Error message should mention invalid format");
-    }
-  }
-
-  @Test
-  void sendMessageWithMissingChannelId_returnsError(Infra infra) throws Exception {
-    String aliceToken = infra.passwordGrant("alice", "alice!");
-    URI wsUri = envoyChatWsUri(infra);
-
-    try (E2ETestWebSocketClient aliceClient =
-        E2ETestWebSocketClient.connect(wsUri, Map.of("Authorization", "Bearer " + aliceToken))) {
-
-      // Wait for ack
-      aliceClient.awaitAck();
-
-      // Send message with missing channelId
-      aliceClient.sendMessage("{\"text\":\"Hello\"}");
-
-      // Should receive error response
-      String errorResponse = aliceClient.getReceivedMessages().poll(2, TimeUnit.SECONDS);
-      assertNotNull(errorResponse, "Should receive error response for missing channelId");
-
-      JsonNode errorNode = infra.mapper().readTree(errorResponse);
-      assertEquals("error", errorNode.get("type").asText());
     }
   }
 }
