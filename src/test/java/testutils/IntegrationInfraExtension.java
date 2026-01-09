@@ -43,6 +43,9 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
   public static final String REALM = "chat";
   public static final String CLIENT_ID = "chat-frontend";
 
+  // Test channel - seeded in database for all tests
+  public static final String TEST_CHANNEL_ID = "00000000-0000-0000-0000-000000000001";
+
   private static final ObjectMapper MAPPER = new ObjectMapper();
 
   // Root store key
@@ -261,6 +264,9 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
               .waitingFor(
                   Wait.forHttp("/health").forPort(8080).withStartupTimeout(Duration.ofMinutes(2)));
       messagingApp.start();
+
+      // --- Seed test data in Citus database ---
+      seedTestData(citusUser, citusPassword, citusDb);
 
       // --- Envoy ---
       String issuer = keycloakBaseUrl + "/realms/" + REALM;
@@ -509,6 +515,40 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
         JsonNode arr = MAPPER.readTree(body);
         Assertions.assertTrue(arr.isArray() && !arr.isEmpty(), "user not found: " + username);
         return arr.get(0).get("id").asText();
+      }
+    }
+
+    //  -------------------------
+    // Helpers: Seed test data
+    // -------------------------
+
+    private void seedTestData(String citusUser, String citusPassword, String citusDb)
+        throws Exception {
+      String host = citusMaster.getHost();
+      Integer port = citusMaster.getMappedPort(5432);
+      String jdbcUrl = String.format("jdbc:postgresql://%s:%d/%s", host, port, citusDb);
+
+      try (java.sql.Connection conn =
+          java.sql.DriverManager.getConnection(jdbcUrl, citusUser, citusPassword)) {
+        // Insert alice and bob as users
+        for (String username : new String[] {"alice", "bob"}) {
+          String userId = userSub(username);
+          try (java.sql.PreparedStatement stmt =
+              conn.prepareStatement(
+                  "INSERT INTO users (user_id) VALUES (?) ON CONFLICT DO NOTHING")) {
+            stmt.setObject(1, java.util.UUID.fromString(userId));
+            stmt.executeUpdate();
+          }
+        }
+
+        // Insert test channel
+        try (java.sql.PreparedStatement stmt =
+            conn.prepareStatement(
+                "INSERT INTO channels (channel_id, channel_name) VALUES (?, ?) ON CONFLICT DO NOTHING")) {
+          stmt.setObject(1, java.util.UUID.fromString(TEST_CHANNEL_ID));
+          stmt.setString(2, "test-channel");
+          stmt.executeUpdate();
+        }
       }
     }
 

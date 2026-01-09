@@ -63,41 +63,22 @@ spotless {
     java {
         target(
             "src/main/java/**/*.java",
-            "src/test/java/**/*.java",
-            "src/integrationTest/java/**/*.java"
+            "src/test/java/**/*.java"
         )
         googleJavaFormat("1.17.0")
     }
 }
 
 // ----------------------------
-// Integration testing
+// Testing with JUnit tags
 // ----------------------------
-val sourceSets = the<SourceSetContainer>()
+// All tests are in src/test/java
+// E2E tests are marked with @Tag("e2e") and require Docker infrastructure
 
-val integrationTest: SourceSet by sourceSets.creating {
-    java.srcDir("src/integrationTest/java")
-    resources.srcDir("src/integrationTest/resources")
-
-    // Compile integration tests against main + test compile deps
-    compileClasspath += sourceSets["main"].output + configurations["testCompileClasspath"]
-
-    // Run integration tests with everything above + test runtime deps
-    runtimeClasspath += output + compileClasspath + configurations["testRuntimeClasspath"]
-}
-
-// Make integration test configurations inherit from unit test ones
-configurations[integrationTest.implementationConfigurationName].extendsFrom(configurations["testImplementation"])
-configurations[integrationTest.runtimeOnlyConfigurationName].extendsFrom(configurations["testRuntimeOnly"])
-configurations[integrationTest.annotationProcessorConfigurationName].extendsFrom(
-    configurations["testAnnotationProcessor"],
-    configurations["annotationProcessor"]
-)
-
-// Task to build the Envoy Docker image for integration tests
+// Task to build the Envoy Docker image for E2E tests
 val buildEnvoyImage by tasks.registering(Exec::class) {
     group = "verification"
-    description = "Builds the Envoy Docker image used for integration tests"
+    description = "Builds the Envoy Docker image used for E2E tests"
 
     workingDir = projectDir
 
@@ -108,41 +89,67 @@ val buildEnvoyImage by tasks.registering(Exec::class) {
         "envoy"
     )
 
-    // Helpful logging
     doFirst {
         println("Building Envoy image realtime-envoy:it")
     }
 }
 
-tasks.register<Test>("integrationTest") {
-    description = "Runs integration tests."
-    group = "verification"
-
-    testClassesDirs = integrationTest.output.classesDirs
-    classpath = integrationTest.runtimeClasspath
-
-    shouldRunAfter(tasks.test)
-    useJUnitPlatform()
+// Default test task: runs unit and component tests (excludes @Tag("e2e"))
+tasks.test {
+    useJUnitPlatform {
+        excludeTags("e2e")
+    }
 
     testLogging {
-        events("FAILED", "SKIPPED")
+        events("PASSED", "FAILED", "SKIPPED")
         exceptionFormat = TestExceptionFormat.FULL
         showStackTraces = true
         showCauses = true
+        showStandardStreams = false
+    }
+
+    maxParallelForks = 1
+
+    afterSuite(KotlinClosure2<TestDescriptor, TestResult, Unit>({ descriptor, result ->
+        if (descriptor.parent == null) {
+            println("\nTest Summary: ${result.testCount} tests, ${result.successfulTestCount} passed, ${result.failedTestCount} failed, ${result.skippedTestCount} skipped")
+        }
+    }))
+}
+
+// E2E test task: runs only tests tagged with @Tag("e2e")
+tasks.register<Test>("e2eTest") {
+    description = "Runs E2E tests (requires Docker infrastructure)"
+    group = "verification"
+
+    useJUnitPlatform {
+        includeTags("e2e")
+    }
+
+    shouldRunAfter(tasks.test)
+
+    testLogging {
+        events("PASSED", "FAILED", "SKIPPED")
+        exceptionFormat = TestExceptionFormat.FULL
+        showStackTraces = true
+        showCauses = true
+        showStandardStreams = false
     }
 
     maxParallelForks = 1
     dependsOn(buildEnvoyImage)
     dependsOn(tasks.named("jibDockerBuild"))
+
+    afterSuite(KotlinClosure2<TestDescriptor, TestResult, Unit>({ descriptor, result ->
+        if (descriptor.parent == null) {
+            println("\nE2E Test Summary: ${result.testCount} tests, ${result.successfulTestCount} passed, ${result.failedTestCount} failed, ${result.skippedTestCount} skipped")
+        }
+    }))
 }
 
 tasks.named("check") {
-    dependsOn("integrationTest")
-    dependsOn("checkstyleIntegrationTest")
-}
-
-tasks.test {
-    maxParallelForks = 1
+    dependsOn("test")
+    dependsOn("e2eTest")
 }
 
 // ----------------------------
@@ -169,6 +176,7 @@ dependencies {
     // Application
     // ----------------------------
     implementation("io.micronaut.serde:micronaut-serde-jackson")
+    implementation("io.micronaut:micronaut-jackson-databind")
     implementation("io.micronaut:micronaut-http-server-netty")
     implementation("io.micronaut:micronaut-management")
     implementation("io.micronaut:micronaut-websocket")
@@ -191,21 +199,13 @@ dependencies {
     // Testcontainers 2.x (names changed in 2.x)
     // ----------------------------
     val tcBom = enforcedPlatform("org.testcontainers:testcontainers-bom:2.0.3")
-
-    // Apply BOM to both unit tests and integration tests
     add("testImplementation", tcBom)
-    add(integrationTest.implementationConfigurationName, tcBom)
-
-    // Add Testcontainers modules to both
     add("testImplementation", "org.testcontainers:testcontainers-junit-jupiter")
     add("testImplementation", "org.testcontainers:testcontainers-postgresql")
 
-    add(integrationTest.implementationConfigurationName, "org.testcontainers:testcontainers-junit-jupiter")
-    add(integrationTest.implementationConfigurationName, "org.testcontainers:testcontainers-postgresql")
-
-    // Integration-test-only helpers
-    add(integrationTest.implementationConfigurationName, "com.squareup.okhttp3:okhttp:4.12.0")
-    add(integrationTest.implementationConfigurationName, "com.fasterxml.jackson.core:jackson-databind:2.17.2")
+    // E2E test helpers (used by tests with @Tag("e2e"))
+    add("testImplementation", "com.squareup.okhttp3:okhttp:4.12.0")
+    add("testImplementation", "com.fasterxml.jackson.core:jackson-databind:2.17.2")
 }
 
 // ----------------------------

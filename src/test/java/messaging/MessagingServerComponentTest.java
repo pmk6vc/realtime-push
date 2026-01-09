@@ -22,16 +22,23 @@ import java.util.concurrent.TimeoutException;
 import org.junit.jupiter.api.Test;
 import testutils.MicronautTestWebSocketClient;
 
-@MicronautTest
+@MicronautTest(environments = "test")
 class MessagingServerComponentTest {
+
+  private static final String TEST_CHANNEL_ID = "00000000-0000-0000-0000-000000000001";
+  private static final String USER_HEADER = "X-User-Id";
+  private static final String ALICE_ID = "11111111-1111-1111-1111-111111111111";
+  private static final String BOB_ID = "22222222-2222-2222-2222-222222222222";
 
   @Inject EmbeddedServer server;
   @Inject WebSocketClient wsClient;
 
-  private static final String USER_HEADER = "X-User-Id";
-
   private URI chatUri() {
     return server.getURI().resolve("/chat");
+  }
+
+  private String buildMessageJson(String text) {
+    return String.format("{\"channelId\":\"%s\",\"text\":\"%s\"}", TEST_CHANNEL_ID, text);
   }
 
   @Test
@@ -45,9 +52,9 @@ class MessagingServerComponentTest {
   @Test
   void onSessionOpen_replacesPreexistingSession() throws Exception {
     MicronautTestWebSocketClient firstClient =
-        connectAndAwaitAck(wsClient, chatUri(), Map.of(USER_HEADER, "alice"));
+        connectAndAwaitAck(wsClient, chatUri(), Map.of(USER_HEADER, ALICE_ID));
     MicronautTestWebSocketClient secondClient =
-        connectAndAwaitAck(wsClient, chatUri(), Map.of(USER_HEADER, "alice"));
+        connectAndAwaitAck(wsClient, chatUri(), Map.of(USER_HEADER, ALICE_ID));
     try (firstClient;
         secondClient) {
       CloseReason cr = firstClient.getCloseReasonFuture().get(250, TimeUnit.MILLISECONDS);
@@ -63,36 +70,36 @@ class MessagingServerComponentTest {
   @Test
   void onMessage_broadcastsToOtherUsers() throws Exception {
     MicronautTestWebSocketClient aliceClient =
-        connectAndAwaitAck(wsClient, chatUri(), Map.of(USER_HEADER, "alice"));
+        connectAndAwaitAck(wsClient, chatUri(), Map.of(USER_HEADER, ALICE_ID));
     MicronautTestWebSocketClient bobClient =
-        connectAndAwaitAck(wsClient, chatUri(), Map.of(USER_HEADER, "bob"));
+        connectAndAwaitAck(wsClient, chatUri(), Map.of(USER_HEADER, BOB_ID));
     try (aliceClient;
         bobClient) {
-      String messageFromAlice = "Hello, Bob!";
-      aliceClient.send(messageFromAlice);
+      String messageText = "Hello, Bob!";
+      aliceClient.send(buildMessageJson(messageText));
 
       String aliceReceivedMessage =
           aliceClient.getReceivedMessages().poll(250, TimeUnit.MILLISECONDS);
       String bobReceivedMessage = bobClient.getReceivedMessages().poll(250, TimeUnit.MILLISECONDS);
       assertNull(aliceReceivedMessage);
       assertNotNull(bobReceivedMessage);
-      assertTrue(bobReceivedMessage.contains(messageFromAlice));
+      assertTrue(bobReceivedMessage.contains(messageText));
     }
   }
 
   @Test
   void onMessage_doesNotBroadcastToDisconnectedUsers() throws Exception {
     MicronautTestWebSocketClient aliceClient =
-        connectAndAwaitAck(wsClient, chatUri(), Map.of(USER_HEADER, "alice"));
+        connectAndAwaitAck(wsClient, chatUri(), Map.of(USER_HEADER, ALICE_ID));
     MicronautTestWebSocketClient bobClient =
-        connectAndAwaitAck(wsClient, chatUri(), Map.of(USER_HEADER, "bob"));
+        connectAndAwaitAck(wsClient, chatUri(), Map.of(USER_HEADER, BOB_ID));
     try (aliceClient;
         bobClient) {
       bobClient.close();
       assertNotNull(bobClient.getCloseReasonFuture().get(250, TimeUnit.MILLISECONDS));
 
-      String messageFromAlice = "Is anyone there?";
-      aliceClient.send(messageFromAlice);
+      String messageText = "Is anyone there?";
+      aliceClient.send(buildMessageJson(messageText));
       assertNull(aliceClient.getReceivedMessages().poll(250, TimeUnit.MILLISECONDS));
     }
   }
@@ -100,15 +107,15 @@ class MessagingServerComponentTest {
   @Test
   void onMessage_multipleMessagesDeliveredWithoutDuplicates() throws Exception {
     MicronautTestWebSocketClient aliceClient =
-        connectAndAwaitAck(wsClient, chatUri(), Map.of(USER_HEADER, "alice"));
+        connectAndAwaitAck(wsClient, chatUri(), Map.of(USER_HEADER, ALICE_ID));
     MicronautTestWebSocketClient bobClient =
-        connectAndAwaitAck(wsClient, chatUri(), Map.of(USER_HEADER, "bob"));
+        connectAndAwaitAck(wsClient, chatUri(), Map.of(USER_HEADER, BOB_ID));
     Set<String> receivedMessages = new HashSet<>();
     try (aliceClient;
         bobClient) {
       for (int i = 1; i <= 5; i++) {
-        String message = "Message " + i;
-        aliceClient.send(message);
+        String messageText = "Message " + i;
+        aliceClient.send(buildMessageJson(messageText));
       }
       for (int i = 1; i <= 5; i++) {
         String received = bobClient.getReceivedMessages().poll(250, TimeUnit.MILLISECONDS);

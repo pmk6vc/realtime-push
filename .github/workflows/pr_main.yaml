@@ -24,7 +24,7 @@ jobs:
           cache: gradle
 
       - name: Spotless + Checkstyle
-        run: ./gradlew spotlessCheck checkstyleMain checkstyleTest checkstyleIntegrationTest --no-daemon --console=plain --stacktrace
+        run: ./gradlew spotlessCheck checkstyleMain checkstyleTest --no-daemon --console=plain --stacktrace
 
       - name: Upload quality reports (on failure)
         if: failure()
@@ -63,8 +63,8 @@ jobs:
             **/build/test-results/test/**
           if-no-files-found: ignore
 
-  integration-tests:
-    name: Integration tests
+  e2e-tests:
+    name: E2E tests
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -77,17 +77,17 @@ jobs:
           java-version: '21'
           cache: gradle
 
-      - name: Run integration tests
-        run: ./gradlew integrationTest --no-daemon --console=plain --stacktrace
+      - name: Run E2E tests
+        run: ./gradlew e2eTest --no-daemon --console=plain --stacktrace
 
-      - name: Upload integration test reports (on failure)
+      - name: Upload E2E test reports (on failure)
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: integration-test-reports
+          name: e2e-test-reports
           path: |
-            **/build/reports/tests/integrationTest/**
-            **/build/test-results/integrationTest/**
+            **/build/reports/tests/e2eTest/**
+            **/build/test-results/e2eTest/**
             **/build/reports/tests/**
             **/build/test-results/**
           if-no-files-found: ignore
