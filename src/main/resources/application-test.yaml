@@ -1,3 +1,6 @@
+# Test profile - used for unit + component tests that don't need a real database
+# E2EI tests do not rely on Micronaut Data / environments and use Testcontainers instead
+
 flyway:
   datasources:
     default:
@@ -6,3 +9,7 @@ flyway:
 datasources:
   default:
     enabled: false
+
+micronaut:
+  server:
+    port: -1

@@ -6,10 +6,12 @@ import com.fasterxml.jackson.databind.JsonNode;
 import java.util.function.Consumer;
 import okhttp3.Request;
 import okhttp3.Response;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import testutils.IntegrationInfraExtension;
 
+@Tag("e2e")
 @ExtendWith(IntegrationInfraExtension.class)
 public class EnvoyAuthE2ETest {
 

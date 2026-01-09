@@ -1,11 +1,14 @@
 package messaging;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micronaut.http.HttpRequest;
 import io.micronaut.websocket.CloseReason;
 import io.micronaut.websocket.WebSocketSession;
 import io.micronaut.websocket.annotation.*;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import util.HeaderUserIdExtractor;
@@ -16,12 +19,19 @@ public class MessagingServer {
   private static final String ATTR_USER_ID = "userId";
   private final ConnectionRegistry userConnRegistry;
   private final HeaderUserIdExtractor headerUserIdExtractor;
+  private final MessageRepository messageRepository;
+  private final ObjectMapper objectMapper;
   private static final Logger LOG = LoggerFactory.getLogger(MessagingServer.class);
 
   public MessagingServer(
-      ConnectionRegistry userConnRegistry, HeaderUserIdExtractor headerUserIdExtractor) {
+      ConnectionRegistry userConnRegistry,
+      HeaderUserIdExtractor headerUserIdExtractor,
+      MessageRepository messageRepository,
+      ObjectMapper objectMapper) {
     this.userConnRegistry = userConnRegistry;
     this.headerUserIdExtractor = headerUserIdExtractor;
+    this.messageRepository = messageRepository;
+    this.objectMapper = objectMapper;
   }
 
   @OnOpen
@@ -61,14 +71,50 @@ public class MessagingServer {
 
   @OnMessage
   public void onSessionMessage(String message, WebSocketSession session) {
-    // TODO: Write message to DB - separate outbox will handle publishing to Kafka for fanout
-    // Messages must be written to DB first - otherwise new clients may join in between fanout and
-    // DB write and miss messages
-    // For now, just echo back to other users registered on this server
-    // Avoid doing any broadcasting in this method in the steady state - delegate to Kafka fanout
-    // instead
     String userId = session.get(ATTR_USER_ID, String.class, null);
-    userConnRegistry.broadcastPayloadWithExclusions(buildPayload(userId, message), Set.of(userId));
+    if (userId == null) {
+      LOG.warn("Received message from session without userId: {}", session.getId());
+      return;
+    }
+
+    try {
+      // Parse incoming message JSON
+      IncomingMessage incomingMessage = objectMapper.readValue(message, IncomingMessage.class);
+
+      // Create and persist message to database
+      Message persistedMessage =
+          Message.create(
+              incomingMessage.channelId(), UUID.fromString(userId), incomingMessage.text());
+      messageRepository.insert(persistedMessage);
+
+      LOG.info(
+          "Persisted message {} to channel {} from user {}",
+          persistedMessage.messageId(),
+          persistedMessage.channelId(),
+          userId);
+
+      // TODO: Write to outbox table for Kafka fanout (Phase 1, item 3)
+      // For now, broadcast locally to other users on this server instance
+      String broadcastPayload = buildBroadcastPayload(persistedMessage);
+      userConnRegistry.broadcastPayloadWithExclusions(broadcastPayload, Set.of(userId));
+
+    } catch (JsonProcessingException e) {
+      LOG.error("Failed to parse message JSON from user {}: {}", userId, message, e);
+      sendErrorResponse(
+          session,
+          "Invalid message format. Expected JSON: {\"channelId\":\"<uuid>\",\"text\":\"<message>\"}");
+    } catch (IllegalArgumentException e) {
+      LOG.error("Invalid userId format for user {}: {}", userId, e.getMessage(), e);
+      sendErrorResponse(session, "Invalid user ID format");
+    } catch (Exception e) {
+      LOG.error("Failed to persist message from user {}: {}", userId, message, e);
+      sendErrorResponse(session, "Failed to send message. Please try again.");
+    }
+  }
+
+  private void sendErrorResponse(WebSocketSession session, String errorMessage) {
+    String errorPayload = "{\"type\":\"error\",\"message\":\"" + escapeJson(errorMessage) + "\"}";
+    session.sendAsync(errorPayload);
   }
 
   @OnError
@@ -86,11 +132,24 @@ public class MessagingServer {
     // targets
   }
 
-  private static String buildPayload(String userId, String message) {
-    return "{\"type\":\"message\",\"from\":\""
-        + userId
+  private String buildBroadcastPayload(Message message) {
+    return "{\"type\":\"message\",\"messageId\":\""
+        + message.messageId()
+        + "\",\"channelId\":\""
+        + message.channelId()
+        + "\",\"from\":\""
+        + message.senderUserId()
+        + "\",\"sentAt\":\""
+        + message.sentAt()
         + "\",\"text\":\""
-        + message.replace("\\", "\\\\").replace("\"", "\\\"")
+        + escapeJson(message.body())
         + "\"}";
+  }
+
+  private String escapeJson(String text) {
+    return text.replace("\\", "\\\\")
+        .replace("\"", "\\\"")
+        .replace("\n", "\\n")
+        .replace("\r", "\\r");
   }
 }

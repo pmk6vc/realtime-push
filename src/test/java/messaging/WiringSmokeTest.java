@@ -8,7 +8,7 @@ import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
 import util.HeaderUserIdExtractor;
 
-@MicronautTest
+@MicronautTest(environments = "test")
 class WiringSmokeTest {
 
   @Inject ApplicationContext ctx;
@@ -18,5 +18,9 @@ class WiringSmokeTest {
     assertTrue(ctx.containsBean(MessagingServer.class));
     assertTrue(ctx.containsBean(ConnectionRegistry.class));
     assertTrue(ctx.containsBean(HeaderUserIdExtractor.class));
+    assertTrue(ctx.containsBean(MessageRepository.class));
+    assertTrue(
+        ctx.containsBean(com.fasterxml.jackson.databind.ObjectMapper.class),
+        "ObjectMapper should be available");
   }
 }
