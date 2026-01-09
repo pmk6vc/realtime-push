@@ -43,12 +43,7 @@ class MessagePersistenceE2ETest {
   @AfterEach
   void cleanupMessages(Infra infra) throws Exception {
     // Delete all messages from test channel between tests
-    try (Connection conn = getCitusConnection(infra);
-        PreparedStatement stmt =
-            conn.prepareStatement("DELETE FROM messages WHERE channel_id = ?")) {
-      stmt.setObject(1, UUID.fromString(TEST_CHANNEL_ID));
-      stmt.executeUpdate();
-    }
+    infra.testDataManager().deleteMessagesFromChannel(TEST_CHANNEL_ID);
   }
 
   @Test

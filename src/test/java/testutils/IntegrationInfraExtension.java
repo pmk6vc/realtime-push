@@ -1,21 +1,12 @@
 package testutils;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.Closeable;
 import java.io.IOException;
 import java.time.Duration;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Objects;
-import okhttp3.FormBody;
-import okhttp3.HttpUrl;
-import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
-import okhttp3.RequestBody;
 import okhttp3.Response;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.extension.BeforeAllCallback;
@@ -25,23 +16,17 @@ import org.junit.jupiter.api.extension.ParameterResolutionException;
 import org.junit.jupiter.api.extension.ParameterResolver;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.Network;
-import org.testcontainers.containers.wait.strategy.Wait;
-import org.testcontainers.postgresql.PostgreSQLContainer;
-import org.testcontainers.utility.MountableFile;
+import testutils.infrastructure.CitusInfrastructure;
+import testutils.infrastructure.EnvoyInfrastructure;
+import testutils.infrastructure.KeycloakInfrastructure;
+import testutils.infrastructure.MessagingAppInfrastructure;
+import testutils.infrastructure.TestDataManager;
 
 /**
  * JUnit 5 extension that starts all infra ONCE per test run, and tears it down ONCE after all
  * integration tests complete.
  */
 public final class IntegrationInfraExtension implements BeforeAllCallback, ParameterResolver {
-
-  // Tunables
-  private static final Duration HTTP_TIMEOUT = Duration.ofSeconds(20);
-  private static final Duration STARTUP_TIMEOUT = Duration.ofMinutes(2);
-
-  // Keycloak realm/client
-  public static final String REALM = "chat";
-  public static final String CLIENT_ID = "chat-frontend";
 
   // Test channel - seeded in database for all tests
   public static final String TEST_CHANNEL_ID = "00000000-0000-0000-0000-000000000001";
@@ -96,29 +81,57 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
    */
   public static final class Infra implements Closeable {
 
+    private static final Duration HTTP_TIMEOUT = Duration.ofSeconds(20);
+
     private final OkHttpClient http = new OkHttpClient.Builder().callTimeout(HTTP_TIMEOUT).build();
 
-    // Shared infra objects
+    // Infrastructure components
     private Network network;
-
-    private GenericContainer<?> messagingApp;
-    private PostgreSQLContainer kcDb;
-    private GenericContainer<?> keycloak;
-    private GenericContainer<?> envoy;
-
-    // Citus cluster
-    private static final int CITUS_WORKER_COUNT = 3;
-    private java.util.List<GenericContainer<?>> citusWorkers;
-    private GenericContainer<?> citusMaster;
-
-    private String keycloakBaseUrl;
-    private String adminToken;
-    private final Map<String, String> userSubByUsername = new HashMap<>();
-    private String envoyBaseUrl;
-    private String envoyAdminBaseUrl;
+    private KeycloakInfrastructure keycloak;
+    private CitusInfrastructure citus;
+    private MessagingAppInfrastructure messagingApp;
+    private EnvoyInfrastructure envoy;
+    private TestDataManager testData;
 
     private Infra() throws Exception {
       start();
+    }
+
+    // -------------------------
+    // Startup
+    // -------------------------
+
+    private void start() throws Exception {
+      // Start network first
+      network = Network.newNetwork();
+
+      // Start infrastructure components in order
+      keycloak = new KeycloakInfrastructure(network, http, MAPPER);
+      System.out.println("Starting " + keycloak.getName() + "...");
+      keycloak.start();
+
+      citus = new CitusInfrastructure(network, "citus", "citus", "citus");
+      System.out.println("Starting " + citus.getName() + "...");
+      citus.start();
+
+      messagingApp = new MessagingAppInfrastructure(network, citus);
+      System.out.println("Starting " + messagingApp.getName() + "...");
+      messagingApp.start();
+
+      // Create test data manager
+      testData = new TestDataManager(citus, keycloak);
+
+      // Seed test data
+      System.out.println("Seeding test data...");
+      testData.seedUser("alice", "alice!");
+      testData.seedUser("bob", "bob!");
+      testData.seedChannel(TEST_CHANNEL_ID, "test-channel");
+
+      envoy = new EnvoyInfrastructure(network, keycloak, messagingApp);
+      System.out.println("Starting " + envoy.getName() + "...");
+      envoy.start();
+
+      System.out.println("All infrastructure started successfully!");
     }
 
     // -------------------------
@@ -134,447 +147,59 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
     }
 
     public String keycloakBaseUrl() {
-      return keycloakBaseUrl;
+      return keycloak.getBaseUrl();
     }
 
     public String envoyBaseUrl() {
-      return envoyBaseUrl;
+      return envoy.getBaseUrl();
     }
 
     public String envoyAdminBaseUrl() {
-      return envoyAdminBaseUrl;
+      return envoy.getAdminBaseUrl();
     }
 
     public GenericContainer<?> messagingAppContainer() {
-      return messagingApp;
+      return messagingApp.getContainer();
     }
 
     public GenericContainer<?> envoyContainer() {
-      return envoy;
+      return envoy.getContainer();
     }
 
     public GenericContainer<?> keycloakContainer() {
-      return keycloak;
+      return keycloak.getContainer();
     }
 
     public GenericContainer<?> citusMasterContainer() {
-      return citusMaster;
+      return citus.getMaster();
     }
 
     public java.util.List<GenericContainer<?>> citusWorkerContainers() {
-      return citusWorkers;
+      return citus.getWorkers();
     }
 
     // -------------------------
-    // Startup
+    // Test data access
     // -------------------------
 
-    private void start() throws Exception {
-      // --- Start network first ---
-      network = Network.newNetwork();
-
-      // --- Citus cluster (start workers first, then master) ---
-      java.nio.file.Path projectRoot = java.nio.file.Paths.get("").toAbsolutePath().normalize();
-      java.nio.file.Path dbInitRunner = projectRoot.resolve("db/init-runner");
-      java.nio.file.Path dbInitCommon = projectRoot.resolve("db/init-common");
-      java.nio.file.Path dbInitMaster = projectRoot.resolve("db/init-master");
-
-      String citusUser = "citus";
-      String citusPassword = "citus";
-      String citusDb = "citus";
-
-      // Create and start workers
-      citusWorkers = new java.util.ArrayList<>();
-      for (int i = 1; i <= CITUS_WORKER_COUNT; i++) {
-        GenericContainer<?> worker =
-            createCitusWorker(
-                "citus_worker_" + i,
-                citusUser,
-                citusPassword,
-                citusDb,
-                dbInitRunner,
-                dbInitCommon,
-                dbInitMaster);
-        worker.start();
-        citusWorkers.add(worker);
-      }
-
-      // Start master (coordinator) - depends on workers being ready
-      citusMaster =
-          createCitusWorker(
-              "citus_master",
-              citusUser,
-              citusPassword,
-              citusDb,
-              dbInitRunner,
-              dbInitCommon,
-              dbInitMaster);
-      citusMaster.start();
-
-      // --- Postgres for Keycloak ---
-      kcDb =
-          new PostgreSQLContainer("postgres:16")
-              .withNetwork(network)
-              .withNetworkAliases("keycloak-db")
-              .withDatabaseName("keycloak")
-              .withUsername("keycloak")
-              .withPassword("keycloak")
-              .waitingFor(Wait.forListeningPort().withStartupTimeout(STARTUP_TIMEOUT));
-      kcDb.start();
-
-      // --- Keycloak ---
-      keycloak =
-          new GenericContainer<>("quay.io/keycloak/keycloak:26.4.7")
-              .withNetwork(network)
-              .withNetworkAliases("keycloak")
-              .withExposedPorts(8080)
-              .withEnv(
-                  Map.of(
-                      "KC_DB", "postgres",
-                      "KC_DB_URL", "jdbc:postgresql://keycloak-db:5432/keycloak",
-                      "KC_DB_USERNAME", "keycloak",
-                      "KC_DB_PASSWORD", "keycloak",
-                      "KEYCLOAK_ADMIN", "admin",
-                      "KEYCLOAK_ADMIN_PASSWORD", "admin"))
-              .withCommand("start-dev", "--http-port=8080", "--hostname-strict=false")
-              .waitingFor(Wait.forHttp("/").forPort(8080).withStartupTimeout(STARTUP_TIMEOUT));
-      keycloak.start();
-      keycloakBaseUrl = "http://" + keycloak.getHost() + ":" + keycloak.getMappedPort(8080);
-
-      // --- Configure Keycloak (realm/client/users) ---
-      adminToken = getAdminToken("admin", "admin");
-      ensureRealm();
-      ensurePublicClient();
-      createUserWithPassword("alice", "alice!");
-      createUserWithPassword("bob", "bob!");
-
-      // --- Micronaut app container ---
-      messagingApp =
-          new GenericContainer<>("realtime-messaging:it")
-              .withNetwork(network)
-              .withNetworkAliases("messaging_app")
-              .withExposedPorts(8080)
-              .withEnv("MICRONAUT_ENVIRONMENTS", "dev")
-              .withEnv("MICRONAUT_SERVER_HOST", "0.0.0.0")
-              .withEnv("MICRONAUT_SERVER_PORT", "8080")
-              .withEnv("CITUS_USER", citusUser)
-              .withEnv("CITUS_PASSWORD", citusPassword)
-              .withEnv("CITUS_DB", citusDb)
-              .dependsOn(citusMaster)
-              .waitingFor(
-                  Wait.forHttp("/health").forPort(8080).withStartupTimeout(Duration.ofMinutes(2)));
-      messagingApp.start();
-
-      // --- Seed test data in Citus database ---
-      seedTestData(citusUser, citusPassword, citusDb);
-
-      // --- Envoy ---
-      String issuer = keycloakBaseUrl + "/realms/" + REALM;
-      String jwksUri = "http://keycloak:8080/realms/" + REALM + "/protocol/openid-connect/certs";
-
-      java.nio.file.Path envoyDir = projectRoot.resolve("envoy");
-
-      envoy =
-          new GenericContainer<>("realtime-envoy:it")
-              .withNetwork(network)
-              .withNetworkAliases("envoy")
-              .withExposedPorts(10000, 9901)
-              .withCopyFileToContainer(
-                  MountableFile.forHostPath(envoyDir.resolve("envoy.template.yaml")),
-                  "/etc/envoy/envoy.template.yaml")
-              .withEnv("KC_ISSUER", issuer)
-              .withEnv("KC_JWKS_URI", jwksUri)
-              .withEnv("KC_JWKS_HOST", "keycloak")
-              .withEnv("KC_JWKS_PORT", "8080")
-              .withEnv("UPSTREAM_HOST", "messaging_app")
-              .withEnv("UPSTREAM_PORT", "8080")
-              .withEnv("ENVOY_LISTEN_PORT", "10000")
-              .withEnv("ENVOY_ADMIN_PORT", "9901")
-              .withStartupAttempts(1)
-              .waitingFor(
-                  Wait.forHttp("/server_info").forPort(9901).withStartupTimeout(STARTUP_TIMEOUT));
-
-      envoy.start();
-      envoyBaseUrl = "http://" + envoy.getHost() + ":" + envoy.getMappedPort(10000);
-      envoyAdminBaseUrl = "http://" + envoy.getHost() + ":" + envoy.getMappedPort(9901);
+    public TestDataManager testDataManager() {
+      return testData;
     }
 
     // -------------------------
-    // Helpers: Citus cluster setup
+    // User and authentication helpers
     // -------------------------
 
-    private GenericContainer<?> createCitusWorker(
-        String workerName,
-        String citusUser,
-        String citusPassword,
-        String citusDb,
-        java.nio.file.Path dbInitRunner,
-        java.nio.file.Path dbInitCommon,
-        java.nio.file.Path dbInitMaster) {
-      return new GenericContainer<>("citusdata/citus:postgres_16")
-          .withNetwork(network)
-          .withNetworkAliases(workerName)
-          .withExposedPorts(5432)
-          .withEnv("POSTGRES_USER", citusUser)
-          .withEnv("POSTGRES_PASSWORD", citusPassword)
-          .withEnv("POSTGRES_DB", citusDb)
-          .withCopyFileToContainer(
-              MountableFile.forHostPath(dbInitRunner), "/docker-entrypoint-initdb.d")
-          .withCopyFileToContainer(MountableFile.forHostPath(dbInitCommon), "/init-common")
-          .withCopyFileToContainer(MountableFile.forHostPath(dbInitMaster), "/init-master")
-          .waitingFor(Wait.forListeningPort().withStartupTimeout(STARTUP_TIMEOUT));
+    public String userSub(String username) {
+      return keycloak.getUserSub(username);
+    }
+
+    public String passwordGrant(String username, String password) throws IOException {
+      return keycloak.passwordGrant(username, password);
     }
 
     // -------------------------
-    // Helpers: tokens + admin API
-    // -------------------------
-
-    private String getAdminToken(String username, String password) throws IOException {
-      RequestBody body =
-          new FormBody.Builder()
-              .add("grant_type", "password")
-              .add("client_id", "admin-cli")
-              .add("username", username)
-              .add("password", password)
-              .build();
-
-      Request req =
-          new Request.Builder()
-              .url(keycloakBaseUrl + "/realms/master/protocol/openid-connect/token")
-              .post(body)
-              .build();
-
-      try (Response r = http.newCall(req).execute()) {
-        String respBody = r.body() == null ? "" : r.body().string();
-        if (r.code() != 200) {
-          throw new IllegalStateException(
-              "Admin token request failed: HTTP " + r.code() + " body=" + respBody);
-        }
-        JsonNode json = MAPPER.readTree(respBody);
-        JsonNode token = json.get("access_token");
-        if (token == null || token.asText().isBlank()) {
-          throw new IllegalStateException("Admin token missing in response: " + respBody);
-        }
-        return token.asText();
-      }
-    }
-
-    private void ensureRealm() throws IOException {
-      Request get =
-          new Request.Builder()
-              .url(keycloakBaseUrl + "/admin/realms/" + REALM)
-              .get()
-              .header("Authorization", "Bearer " + adminToken)
-              .build();
-
-      try (Response r = http.newCall(get).execute()) {
-        if (r.code() == 200) return;
-        if (r.code() != 404) Assertions.fail("Unexpected realm GET: " + r.code());
-      }
-
-      String payload = "{\"realm\":\"" + REALM + "\",\"enabled\":true}";
-      Request create =
-          new Request.Builder()
-              .url(keycloakBaseUrl + "/admin/realms")
-              .post(RequestBody.create(payload, MediaType.get("application/json")))
-              .header("Authorization", "Bearer " + adminToken)
-              .build();
-
-      try (Response r = http.newCall(create).execute()) {
-        Assertions.assertTrue(
-            r.code() == 201 || r.code() == 204, "realm create failed: " + r.code());
-      }
-    }
-
-    private void ensurePublicClient() throws IOException {
-      HttpUrl url =
-          Objects.requireNonNull(
-                  HttpUrl.parse(keycloakBaseUrl + "/admin/realms/" + REALM + "/clients"))
-              .newBuilder()
-              .addQueryParameter("clientId", CLIENT_ID)
-              .build();
-
-      Request list =
-          new Request.Builder()
-              .url(url)
-              .get()
-              .header("Authorization", "Bearer " + adminToken)
-              .build();
-
-      try (Response r = http.newCall(list).execute()) {
-        String body = r.body() == null ? "" : r.body().string();
-        assertEquals(200, r.code(), "List clients failed: " + body);
-
-        JsonNode arr = MAPPER.readTree(body);
-        if (arr.isArray() && !arr.isEmpty()) return;
-      }
-
-      String payload =
-          """
-                    {
-                      "clientId": "%s",
-                      "enabled": true,
-                      "publicClient": true,
-                      "standardFlowEnabled": true,
-                      "directAccessGrantsEnabled": true,
-                      "redirectUris": ["http://localhost/*"],
-                      "webOrigins": ["*"]
-                    }
-                    """
-              .formatted(CLIENT_ID);
-
-      Request create =
-          new Request.Builder()
-              .url(keycloakBaseUrl + "/admin/realms/" + REALM + "/clients")
-              .post(RequestBody.create(payload, MediaType.get("application/json")))
-              .header("Authorization", "Bearer " + adminToken)
-              .build();
-
-      try (Response r = http.newCall(create).execute()) {
-        Assertions.assertTrue(
-            r.code() == 201 || r.code() == 204, "client create failed: " + r.code());
-      }
-    }
-
-    private void createUserWithPassword(String username, String password) throws IOException {
-      String payload =
-          """
-              {
-                "username": "%s",
-                "email": "%s@example.com",
-                "emailVerified": true,
-                "firstName": "Test",
-                "lastName": "User",
-                "enabled": true,
-                "requiredActions": []
-              }
-              """
-              .formatted(username, username);
-      Request create =
-          new Request.Builder()
-              .url(keycloakBaseUrl + "/admin/realms/" + REALM + "/users")
-              .post(RequestBody.create(payload, MediaType.get("application/json")))
-              .header("Authorization", "Bearer " + adminToken)
-              .build();
-
-      String userId;
-      try (Response r = http.newCall(create).execute()) {
-        String body = r.body() == null ? "" : r.body().string();
-        if (r.code() == 409) {
-          userId = lookupUserId(username);
-        } else {
-          assertEquals(201, r.code(), "user create failed: " + body);
-          String loc = r.header("Location");
-          Assertions.assertNotNull(loc);
-          userId = loc.substring(loc.lastIndexOf('/') + 1);
-        }
-      }
-      userSubByUsername.put(username, userId);
-
-      String passPayload =
-          "{\"type\":\"password\",\"value\":\"" + password + "\",\"temporary\":false}";
-      Request setPass =
-          new Request.Builder()
-              .url(
-                  keycloakBaseUrl
-                      + "/admin/realms/"
-                      + REALM
-                      + "/users/"
-                      + userId
-                      + "/reset-password")
-              .put(RequestBody.create(passPayload, MediaType.get("application/json")))
-              .header("Authorization", "Bearer " + adminToken)
-              .build();
-
-      try (Response r = http.newCall(setPass).execute()) {
-        String body = r.body() == null ? "" : r.body().string();
-        assertEquals(204, r.code(), "set password failed: " + body);
-      }
-    }
-
-    private String lookupUserId(String username) throws IOException {
-      HttpUrl url =
-          Objects.requireNonNull(
-                  HttpUrl.parse(keycloakBaseUrl + "/admin/realms/" + REALM + "/users"))
-              .newBuilder()
-              .addQueryParameter("username", username)
-              .addQueryParameter("exact", "true")
-              .build();
-
-      Request req =
-          new Request.Builder()
-              .url(url)
-              .get()
-              .header("Authorization", "Bearer " + adminToken)
-              .build();
-
-      try (Response r = http.newCall(req).execute()) {
-        String body = r.body() == null ? "" : r.body().string();
-        assertEquals(200, r.code(), "lookup user failed: " + body);
-
-        JsonNode arr = MAPPER.readTree(body);
-        Assertions.assertTrue(arr.isArray() && !arr.isEmpty(), "user not found: " + username);
-        return arr.get(0).get("id").asText();
-      }
-    }
-
-    //  -------------------------
-    // Helpers: Seed test data
-    // -------------------------
-
-    private void seedTestData(String citusUser, String citusPassword, String citusDb)
-        throws Exception {
-      String host = citusMaster.getHost();
-      Integer port = citusMaster.getMappedPort(5432);
-      String jdbcUrl = String.format("jdbc:postgresql://%s:%d/%s", host, port, citusDb);
-
-      try (java.sql.Connection conn =
-          java.sql.DriverManager.getConnection(jdbcUrl, citusUser, citusPassword)) {
-        // Insert alice and bob as users
-        for (String username : new String[] {"alice", "bob"}) {
-          String userId = userSub(username);
-          try (java.sql.PreparedStatement stmt =
-              conn.prepareStatement(
-                  "INSERT INTO users (user_id) VALUES (?) ON CONFLICT DO NOTHING")) {
-            stmt.setObject(1, java.util.UUID.fromString(userId));
-            stmt.executeUpdate();
-          }
-        }
-
-        // Insert test channel
-        try (java.sql.PreparedStatement stmt =
-            conn.prepareStatement(
-                "INSERT INTO channels (channel_id, channel_name) VALUES (?, ?) ON CONFLICT DO NOTHING")) {
-          stmt.setObject(1, java.util.UUID.fromString(TEST_CHANNEL_ID));
-          stmt.setString(2, "test-channel");
-          stmt.executeUpdate();
-        }
-      }
-    }
-
-    // -------------------------
-    // Teardown (called once)
-    // -------------------------
-
-    @Override
-    public void close() {
-      // Called exactly once when JUnit closes the ROOT context (end of test run)
-      if (envoy != null) envoy.stop();
-      if (messagingApp != null) messagingApp.stop();
-      if (keycloak != null) keycloak.stop();
-      if (kcDb != null) kcDb.stop();
-
-      // Stop Citus cluster (master first, then workers)
-      if (citusMaster != null) citusMaster.stop();
-      if (citusWorkers != null) {
-        citusWorkers.forEach(GenericContainer::stop);
-      }
-
-      if (network != null) network.close();
-    }
-
-    // -------------------------
-    // Public helpers for tests
+    // Utility methods
     // -------------------------
 
     public JsonNode readJsonBody(String body) throws IOException {
@@ -585,54 +210,40 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
       return MAPPER.readTree(s);
     }
 
-    public String userSub(String username) {
-      String sub = userSubByUsername.get(username);
-      if (sub == null) {
-        throw new IllegalArgumentException("Unknown user: " + username);
-      }
-      return sub;
-    }
-
-    public String passwordGrant(String username, String password) throws IOException {
-      RequestBody body =
-          new FormBody.Builder()
-              .add("grant_type", "password")
-              .add("client_id", CLIENT_ID)
-              .add("username", username)
-              .add("password", password)
-              .build();
-
-      Request req =
-          new Request.Builder()
-              .url(keycloakBaseUrl + "/realms/" + REALM + "/protocol/openid-connect/token")
-              .post(body)
-              .build();
-
-      try (Response r = http.newCall(req).execute()) {
-        String responseBody = r.body() == null ? "" : r.body().string();
-        assertEquals(200, r.code(), "token failed: " + responseBody);
-
-        JsonNode json = MAPPER.readTree(responseBody);
-        JsonNode token = json.get("access_token");
-        Assertions.assertNotNull(token, "access_token missing: " + responseBody);
-        Assertions.assertFalse(token.asText().isBlank(), "access_token blank: " + responseBody);
-        return token.asText();
-      }
-    }
-
     public java.net.URI envoyBaseUri() {
       return java.net.URI.create(envoyBaseUrl());
     }
 
     public String envoyClusters() throws IOException {
       Request req =
-          new Request.Builder().url(envoyAdminBaseUrl + "/clusters?format=json").get().build();
+          new Request.Builder()
+              .url(envoy.getAdminBaseUrl() + "/clusters?format=json")
+              .get()
+              .build();
 
       try (Response r = http.newCall(req).execute()) {
         String body = r.body() == null ? "" : r.body().string();
-        assertEquals(200, r.code(), "envoy admin /clusters failed: " + body);
+        Assertions.assertEquals(200, r.code(), "envoy admin /clusters failed: " + body);
         return body;
       }
+    }
+
+    // -------------------------
+    // Teardown (called once)
+    // -------------------------
+
+    @Override
+    public void close() {
+      // Called exactly once when JUnit closes the ROOT context (end of test run)
+      System.out.println("Stopping infrastructure...");
+
+      if (envoy != null) envoy.close();
+      if (messagingApp != null) messagingApp.close();
+      if (keycloak != null) keycloak.close();
+      if (citus != null) citus.close();
+      if (network != null) network.close();
+
+      System.out.println("All infrastructure stopped.");
     }
   }
 }
