@@ -107,7 +107,7 @@ public class MessagingServer {
       Message persistedMessage =
           Message.create(
               incomingMessage.channelId(), UUID.fromString(userId), incomingMessage.text());
-      messageRepository.insert(persistedMessage);
+      messageRepository.save(persistedMessage);
 
       LOG.info(
           "Persisted message {} to channel {} from user {}",
