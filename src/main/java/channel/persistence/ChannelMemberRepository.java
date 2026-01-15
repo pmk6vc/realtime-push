@@ -1,5 +1,6 @@
 package channel.persistence;
 
+import io.micronaut.data.annotation.Query;
 import io.micronaut.data.jdbc.annotation.JdbcRepository;
 import io.micronaut.data.model.query.builder.sql.Dialect;
 import io.micronaut.data.repository.CrudRepository;
@@ -20,4 +21,13 @@ public interface ChannelMemberRepository extends CrudRepository<ChannelMember, C
 
   /** Remove a user from a channel. */
   void deleteByIdChannelIdAndIdUserId(UUID channelId, UUID userId);
+
+  /**
+   * Adds a member to a channel if they are not already a member. Uses INSERT ON CONFLICT DO NOTHING
+   * to handle concurrent requests safely.
+   */
+  @Query(
+      "INSERT INTO channel_members (channel_id, user_id) VALUES (:channelId, :userId) "
+          + "ON CONFLICT DO NOTHING")
+  void addMemberIfAbsent(UUID channelId, UUID userId);
 }

@@ -1,7 +1,9 @@
 package channel;
 
+import channel.dto.AddMemberRequest;
 import channel.dto.ChannelResponse;
 import channel.dto.CreateChannelRequest;
+import channel.dto.TransferOwnershipRequest;
 import channel.dto.UpdateChannelRequest;
 import channel.persistence.Channel;
 import channel.service.ChannelService;
@@ -68,6 +70,36 @@ public class ChannelController {
     UUID userId = extractUserId(httpRequest);
     channelService.deleteChannel(channelId, userId);
     return HttpResponse.noContent();
+  }
+
+  /** Adds a member to a channel. Only the owner can add members. */
+  @Post("/{channelId}/members")
+  public HttpResponse<?> addMember(
+      @PathVariable UUID channelId, @Body AddMemberRequest request, HttpRequest<?> httpRequest) {
+    UUID userId = extractUserId(httpRequest);
+    channelService.addMember(channelId, request.userId(), userId);
+    return HttpResponse.ok();
+  }
+
+  /** Removes a member from a channel. Only the owner can remove members. */
+  @Delete("/{channelId}/members/{memberUserId}")
+  public HttpResponse<?> removeMember(
+      @PathVariable UUID channelId, @PathVariable UUID memberUserId, HttpRequest<?> httpRequest) {
+    UUID userId = extractUserId(httpRequest);
+    channelService.removeMember(channelId, memberUserId, userId);
+    return HttpResponse.noContent();
+  }
+
+  /** Transfers ownership of a channel to a new owner. Only the current owner can transfer. */
+  @Post("/{channelId}/transfer-ownership")
+  @Produces(MediaType.APPLICATION_JSON)
+  public ChannelResponse transferOwnership(
+      @PathVariable UUID channelId,
+      @Body TransferOwnershipRequest request,
+      HttpRequest<?> httpRequest) {
+    UUID userId = extractUserId(httpRequest);
+    Channel channel = channelService.transferOwnership(channelId, request.newOwnerUserId(), userId);
+    return ChannelResponse.from(channel);
   }
 
   private UUID extractUserId(HttpRequest<?> httpRequest) {
