@@ -119,7 +119,8 @@ public class MembershipManagementE2ETest {
               .build();
 
       try (Response response = infra.http().newCall(addRequest).execute()) {
-        assertEquals(200, response.code(), "Adding member should be idempotent (attempt " + i + ")");
+        assertEquals(
+            200, response.code(), "Adding member should be idempotent (attempt " + i + ")");
       }
     }
   }
@@ -209,7 +210,8 @@ public class MembershipManagementE2ETest {
     String aliceToken = infra.passwordGrant("alice", "alice!");
     String aliceId = infra.userSub("alice");
 
-    RequestBody createBody = RequestBody.create("{\"channelName\":\"owner-self-remove-test\"}", JSON);
+    RequestBody createBody =
+        RequestBody.create("{\"channelName\":\"owner-self-remove-test\"}", JSON);
     Request createRequest =
         new Request.Builder()
             .url(infra.envoyBaseUrl() + "/channels")

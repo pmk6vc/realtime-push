@@ -23,8 +23,8 @@ public interface ChannelMemberRepository extends CrudRepository<ChannelMember, C
   void deleteByIdChannelIdAndIdUserId(UUID channelId, UUID userId);
 
   /**
-   * Adds a member to a channel if they are not already a member. Uses INSERT ON CONFLICT DO
-   * NOTHING to handle concurrent requests safely.
+   * Adds a member to a channel if they are not already a member. Uses INSERT ON CONFLICT DO NOTHING
+   * to handle concurrent requests safely.
    */
   @Query(
       "INSERT INTO channel_members (channel_id, user_id) VALUES (:channelId, :userId) "
