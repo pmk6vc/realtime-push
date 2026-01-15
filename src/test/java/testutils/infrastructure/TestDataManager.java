@@ -142,8 +142,7 @@ public class TestDataManager {
    */
   public boolean userExistsInDatabase(String userId) throws Exception {
     try (Connection conn = getCitusConnection();
-        PreparedStatement stmt =
-            conn.prepareStatement("SELECT 1 FROM users WHERE user_id = ?")) {
+        PreparedStatement stmt = conn.prepareStatement("SELECT 1 FROM users WHERE user_id = ?")) {
       stmt.setObject(1, UUID.fromString(userId));
       try (var rs = stmt.executeQuery()) {
         return rs.next();

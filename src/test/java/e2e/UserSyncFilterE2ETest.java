@@ -88,8 +88,7 @@ public class UserSyncFilterE2ETest {
   void unauthenticatedRequest_proceedsWithoutError(IntegrationInfraExtension.Infra infra)
       throws Exception {
     // Request without Authorization header should proceed (and get 401 from Envoy)
-    Request request =
-        new Request.Builder().url(infra.envoyBaseUrl() + "/").get().build();
+    Request request = new Request.Builder().url(infra.envoyBaseUrl() + "/").get().build();
 
     try (Response response = infra.http().newCall(request).execute()) {
       // Should get 401 from Envoy (no auth) - not a 500 error from the filter
