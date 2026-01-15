@@ -118,4 +118,33 @@ public class ChannelService {
 
     memberRepository.deleteByIdChannelIdAndIdUserId(channelId, memberUserId);
   }
+
+  /**
+   * Transfers ownership of a channel to a new owner. Only the current owner can transfer ownership.
+   * The new owner must already be a member of the channel.
+   *
+   * @return the updated channel with the new owner
+   */
+  @Transactional
+  public Channel transferOwnership(UUID channelId, UUID newOwnerUserId, UUID requestingUserId) {
+    Channel channel =
+        channelRepository
+            .findByChannelId(channelId)
+            .orElseThrow(() -> new NotFoundException("Channel not found"));
+
+    authService.requireOwner(channelId, requestingUserId);
+
+    // Cannot transfer to self
+    if (channel.ownerUserId().equals(newOwnerUserId)) {
+      throw new util.exception.BadRequestException("You are already the owner of this channel.");
+    }
+
+    // New owner must be a member
+    authService.requireMember(channelId, newOwnerUserId);
+
+    Channel updated =
+        new Channel(
+            channel.channelId(), channel.channelName(), newOwnerUserId, channel.createdAt());
+    return channelRepository.update(updated);
+  }
 }
