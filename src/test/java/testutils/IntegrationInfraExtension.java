@@ -123,9 +123,11 @@ public final class IntegrationInfraExtension implements BeforeAllCallback, Param
 
       // Seed test data
       System.out.println("Seeding test data...");
-      testData.seedUser("alice", "alice!");
-      testData.seedUser("bob", "bob!");
-      testData.seedChannel(TEST_CHANNEL_ID, "test-channel");
+      String aliceId = testData.seedUser("alice", "alice!");
+      String bobId = testData.seedUser("bob", "bob!");
+      testData.seedChannel(TEST_CHANNEL_ID, "test-channel", aliceId);
+      // Add bob as member of test channel so both users can use it
+      testData.addChannelMember(TEST_CHANNEL_ID, bobId);
 
       envoy = new EnvoyInfrastructure(network, keycloak, messagingApp);
       System.out.println("Starting " + envoy.getName() + "...");

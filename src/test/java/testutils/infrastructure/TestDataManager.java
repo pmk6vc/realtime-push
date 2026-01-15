@@ -30,18 +30,55 @@ public class TestDataManager {
   }
 
   /**
-   * Seeds a channel in the Citus database.
+   * Seeds a channel in the Citus database with owner and adds owner as member.
    *
    * @param channelId Channel ID (UUID string)
    * @param channelName Channel name
+   * @param ownerUserId Owner's user ID (UUID string)
    */
-  public void seedChannel(String channelId, String channelName) throws Exception {
+  public void seedChannel(String channelId, String channelName, String ownerUserId)
+      throws Exception {
+    UUID channelUuid = UUID.fromString(channelId);
+    UUID ownerUuid = UUID.fromString(ownerUserId);
+
+    try (Connection conn = getCitusConnection()) {
+      // Insert channel with owner
+      try (PreparedStatement stmt =
+          conn.prepareStatement(
+              "INSERT INTO channels (channel_id, channel_name, owner_user_id) "
+                  + "VALUES (?, ?, ?) ON CONFLICT DO NOTHING")) {
+        stmt.setObject(1, channelUuid);
+        stmt.setString(2, channelName);
+        stmt.setObject(3, ownerUuid);
+        stmt.executeUpdate();
+      }
+
+      // Add owner as member
+      try (PreparedStatement stmt =
+          conn.prepareStatement(
+              "INSERT INTO channel_members (channel_id, user_id) "
+                  + "VALUES (?, ?) ON CONFLICT DO NOTHING")) {
+        stmt.setObject(1, channelUuid);
+        stmt.setObject(2, ownerUuid);
+        stmt.executeUpdate();
+      }
+    }
+  }
+
+  /**
+   * Adds a user as a member of a channel.
+   *
+   * @param channelId Channel ID (UUID string)
+   * @param userId User ID (UUID string)
+   */
+  public void addChannelMember(String channelId, String userId) throws Exception {
     try (Connection conn = getCitusConnection();
         PreparedStatement stmt =
             conn.prepareStatement(
-                "INSERT INTO channels (channel_id, channel_name) VALUES (?, ?) ON CONFLICT DO NOTHING")) {
+                "INSERT INTO channel_members (channel_id, user_id) "
+                    + "VALUES (?, ?) ON CONFLICT DO NOTHING")) {
       stmt.setObject(1, UUID.fromString(channelId));
-      stmt.setString(2, channelName);
+      stmt.setObject(2, UUID.fromString(userId));
       stmt.executeUpdate();
     }
   }
