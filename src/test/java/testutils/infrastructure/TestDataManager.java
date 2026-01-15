@@ -30,6 +30,28 @@ public class TestDataManager {
   }
 
   /**
+   * Creates a user in Keycloak only (not in the database). Useful for testing lazy user creation.
+   *
+   * @param username Username for the user
+   * @param password Password for the user
+   * @return User's subject (sub) claim from Keycloak
+   */
+  public String createKeycloakUserOnly(String username, String password) throws Exception {
+    return keycloak.createUser(username, password);
+  }
+
+  /**
+   * Obtains an OAuth2 password grant token for a user.
+   *
+   * @param username Username
+   * @param password Password
+   * @return JWT access token
+   */
+  public String passwordGrant(String username, String password) throws Exception {
+    return keycloak.passwordGrant(username, password);
+  }
+
+  /**
    * Seeds a channel in the Citus database with owner and adds owner as member.
    *
    * @param channelId Channel ID (UUID string)
@@ -108,6 +130,35 @@ public class TestDataManager {
         PreparedStatement stmt =
             conn.prepareStatement("DELETE FROM messages WHERE channel_id = ?")) {
       stmt.setObject(1, UUID.fromString(channelId));
+      stmt.executeUpdate();
+    }
+  }
+
+  /**
+   * Checks if a user exists in the Citus database.
+   *
+   * @param userId User ID (UUID string)
+   * @return true if user exists
+   */
+  public boolean userExistsInDatabase(String userId) throws Exception {
+    try (Connection conn = getCitusConnection();
+        PreparedStatement stmt = conn.prepareStatement("SELECT 1 FROM users WHERE user_id = ?")) {
+      stmt.setObject(1, UUID.fromString(userId));
+      try (var rs = stmt.executeQuery()) {
+        return rs.next();
+      }
+    }
+  }
+
+  /**
+   * Deletes a user from the Citus database (for test setup/cleanup).
+   *
+   * @param userId User ID (UUID string)
+   */
+  public void deleteUserFromDatabase(String userId) throws Exception {
+    try (Connection conn = getCitusConnection();
+        PreparedStatement stmt = conn.prepareStatement("DELETE FROM users WHERE user_id = ?")) {
+      stmt.setObject(1, UUID.fromString(userId));
       stmt.executeUpdate();
     }
   }

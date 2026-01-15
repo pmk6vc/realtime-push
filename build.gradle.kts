@@ -36,7 +36,7 @@ micronaut {
     testRuntime("junit5")
     processing {
         incremental(true)
-        annotations("messaging.*", "channel.*", "util.*")
+        annotations("messaging.*", "channel.*", "util.*", "user.*")
     }
     aot {
         optimizeServiceLoading = false
