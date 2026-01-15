@@ -1,14 +1,18 @@
 package messaging;
 
+import channel.persistence.ChannelMember;
+import channel.persistence.ChannelMemberRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micronaut.http.HttpRequest;
 import io.micronaut.websocket.CloseReason;
 import io.micronaut.websocket.WebSocketSession;
 import io.micronaut.websocket.annotation.*;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import messaging.persistence.Message;
 import messaging.persistence.MessageRepository;
 import org.slf4j.Logger;
@@ -22,6 +26,7 @@ public class MessagingServer {
   private final ConnectionRegistry userConnRegistry;
   private final HeaderUserIdExtractor headerUserIdExtractor;
   private final MessageRepository messageRepository;
+  private final ChannelMemberRepository channelMemberRepository;
   private final ObjectMapper objectMapper;
   private static final Logger LOG = LoggerFactory.getLogger(MessagingServer.class);
 
@@ -29,10 +34,12 @@ public class MessagingServer {
       ConnectionRegistry userConnRegistry,
       HeaderUserIdExtractor headerUserIdExtractor,
       MessageRepository messageRepository,
+      ChannelMemberRepository channelMemberRepository,
       ObjectMapper objectMapper) {
     this.userConnRegistry = userConnRegistry;
     this.headerUserIdExtractor = headerUserIdExtractor;
     this.messageRepository = messageRepository;
+    this.channelMemberRepository = channelMemberRepository;
     this.objectMapper = objectMapper;
   }
 
@@ -105,10 +112,22 @@ public class MessagingServer {
         return;
       }
 
+      UUID channelId = incomingMessage.channelId();
+      UUID senderUserId = UUID.fromString(userId);
+
+      // Check if sender is a member of the channel
+      // TODO: Cache membership lookups in Redis when implementing multi-instance support
+      if (!channelMemberRepository.existsByIdChannelIdAndIdUserId(channelId, senderUserId)) {
+        LOG.warn(
+            "User {} attempted to send message to channel {} but is not a member",
+            userId,
+            channelId);
+        sendErrorResponse(session, "You are not a member of this channel");
+        return;
+      }
+
       // Create and persist message to database
-      Message messageToSave =
-          Message.create(
-              incomingMessage.channelId(), UUID.fromString(userId), incomingMessage.text());
+      Message messageToSave = Message.create(channelId, senderUserId, incomingMessage.text());
       Message savedMessage = messageRepository.save(messageToSave);
 
       LOG.info(
@@ -117,10 +136,19 @@ public class MessagingServer {
           savedMessage.channelId(),
           userId);
 
+      // Get channel members for targeted broadcast
+      // TODO: Cache member lists in Redis when implementing multi-instance support
+      List<ChannelMember> channelMembers = channelMemberRepository.findByIdChannelId(channelId);
+      Set<String> memberUserIds =
+          channelMembers.stream()
+              .map(member -> member.userId().toString())
+              .filter(memberId -> !memberId.equals(userId)) // Exclude sender
+              .collect(Collectors.toSet());
+
       // TODO: Write to outbox table for Kafka fanout (Phase 1, item 3)
-      // For now, broadcast locally to other users on this server instance
+      // For now, broadcast locally to channel members on this server instance
       String broadcastPayload = buildBroadcastPayload(savedMessage);
-      userConnRegistry.broadcastPayloadWithExclusions(broadcastPayload, Set.of(userId));
+      userConnRegistry.broadcastPayloadToTargets(broadcastPayload, memberUserIds);
 
     } catch (JsonProcessingException e) {
       LOG.error("Failed to parse message JSON from user {}: {}", userId, message, e);
