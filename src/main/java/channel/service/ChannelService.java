@@ -6,6 +6,7 @@ import channel.persistence.ChannelMemberRepository;
 import channel.persistence.ChannelRepository;
 import jakarta.inject.Singleton;
 import jakarta.transaction.Transactional;
+import java.util.List;
 import java.util.UUID;
 import user.persistence.UserRepository;
 import util.exception.NotFoundException;
@@ -146,5 +147,42 @@ public class ChannelService {
         new Channel(
             channel.channelId(), channel.channelName(), newOwnerUserId, channel.createdAt());
     return channelRepository.update(updated);
+  }
+
+  /** Lists all members of a channel. Only members can view the member list. */
+  public List<ChannelMember> listMembers(UUID channelId, UUID requestingUserId) {
+    if (!channelRepository.existsById(channelId)) {
+      throw new NotFoundException("Channel not found");
+    }
+
+    authService.requireMember(channelId, requestingUserId);
+    return memberRepository.findByIdChannelId(channelId);
+  }
+
+  /**
+   * Allows a member to leave a channel. Owner cannot leave (must transfer ownership or delete
+   * channel instead).
+   */
+  @Transactional
+  public void leaveChannel(UUID channelId, UUID requestingUserId) {
+    Channel channel =
+        channelRepository
+            .findByChannelId(channelId)
+            .orElseThrow(() -> new NotFoundException("Channel not found"));
+
+    authService.requireMember(channelId, requestingUserId);
+
+    // Owner cannot leave
+    if (channel.ownerUserId().equals(requestingUserId)) {
+      throw new util.exception.BadRequestException(
+          "Owner cannot leave. Transfer ownership or delete the channel instead.");
+    }
+
+    memberRepository.deleteByIdChannelIdAndIdUserId(channelId, requestingUserId);
+  }
+
+  /** Lists all channels the user is a member of, with channel details (single query). */
+  public List<channel.persistence.UserChannelProjection> listUserChannels(UUID userId) {
+    return channelRepository.findChannelsByUserId(userId);
   }
 }

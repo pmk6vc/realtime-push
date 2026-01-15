@@ -3,6 +3,7 @@ package channel;
 import channel.dto.AddMemberRequest;
 import channel.dto.ChannelResponse;
 import channel.dto.CreateChannelRequest;
+import channel.dto.MemberResponse;
 import channel.dto.TransferOwnershipRequest;
 import channel.dto.UpdateChannelRequest;
 import channel.persistence.Channel;
@@ -18,6 +19,7 @@ import io.micronaut.http.annotation.PathVariable;
 import io.micronaut.http.annotation.Post;
 import io.micronaut.http.annotation.Produces;
 import io.micronaut.http.annotation.Put;
+import java.util.List;
 import java.util.UUID;
 import util.HeaderUserIdExtractor;
 
@@ -100,6 +102,25 @@ public class ChannelController {
     UUID userId = extractUserId(httpRequest);
     Channel channel = channelService.transferOwnership(channelId, request.newOwnerUserId(), userId);
     return ChannelResponse.from(channel);
+  }
+
+  /** Lists all members of a channel. Only members can view. */
+  @Get("/{channelId}/members")
+  @Produces(MediaType.APPLICATION_JSON)
+  public List<MemberResponse> listMembers(
+      @PathVariable UUID channelId, HttpRequest<?> httpRequest) {
+    UUID userId = extractUserId(httpRequest);
+    return channelService.listMembers(channelId, userId).stream()
+        .map(MemberResponse::from)
+        .toList();
+  }
+
+  /** Allows a member to leave a channel. Owner cannot leave. */
+  @Delete("/{channelId}/members/me")
+  public HttpResponse<?> leaveChannel(@PathVariable UUID channelId, HttpRequest<?> httpRequest) {
+    UUID userId = extractUserId(httpRequest);
+    channelService.leaveChannel(channelId, userId);
+    return HttpResponse.noContent();
   }
 
   private UUID extractUserId(HttpRequest<?> httpRequest) {
