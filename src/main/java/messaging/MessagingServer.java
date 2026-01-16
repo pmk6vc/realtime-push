@@ -18,6 +18,7 @@ import messaging.message.AckMessage;
 import messaging.message.BroadcastMessage;
 import messaging.message.ErrorMessage;
 import messaging.persistence.Message;
+import messaging.ratelimit.RateLimitService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import util.HeaderUserIdExtractor;
@@ -33,6 +34,7 @@ public class MessagingServer {
   private final MessageService messageService;
   private final ChannelMemberRepository channelMemberRepository;
   private final ObjectMapper objectMapper;
+  private final RateLimitService rateLimitService;
   private static final Logger LOG = LoggerFactory.getLogger(MessagingServer.class);
 
   public MessagingServer(
@@ -40,12 +42,14 @@ public class MessagingServer {
       HeaderUserIdExtractor headerUserIdExtractor,
       MessageService messageService,
       ChannelMemberRepository channelMemberRepository,
-      ObjectMapper objectMapper) {
+      ObjectMapper objectMapper,
+      RateLimitService rateLimitService) {
     this.userConnRegistry = userConnRegistry;
     this.headerUserIdExtractor = headerUserIdExtractor;
     this.messageService = messageService;
     this.channelMemberRepository = channelMemberRepository;
     this.objectMapper = objectMapper;
+    this.rateLimitService = rateLimitService;
   }
 
   @OnOpen
@@ -101,7 +105,14 @@ public class MessagingServer {
       return;
     }
 
-    // Parse and validate message synchronously (fast, no IO)
+    // Check rate limit
+    if (!rateLimitService.tryConsume(userId)) {
+      LOG.warn("Rate limit exceeded for user {}", userId);
+      sendErrorResponse(session, "Rate limit exceeded. Please slow down.");
+      return;
+    }
+
+    // Parse and validate message (fast, no IO)
     IncomingMessage incomingMessage;
     try {
       incomingMessage = objectMapper.readValue(message, IncomingMessage.class);

@@ -177,6 +177,8 @@ dependencies {
     // ----------------------------
     // Application
     // ----------------------------
+    implementation("com.bucket4j:bucket4j_jdk17-core:8.14.0")
+    implementation("com.github.ben-manes.caffeine:caffeine:3.1.8")
     implementation("io.micronaut.serde:micronaut-serde-jackson")
     implementation("io.micronaut:micronaut-jackson-databind")
     implementation("io.micronaut:micronaut-http-server-netty")
