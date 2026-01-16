@@ -4,6 +4,7 @@ datasources:
     username: ${CITUS_USER}
     password: ${CITUS_PASSWORD}
     driverClassName: org.postgresql.Driver
+    connection-init-sql: "SET statement_timeout = '5s'"
 
 flyway:
   datasources:

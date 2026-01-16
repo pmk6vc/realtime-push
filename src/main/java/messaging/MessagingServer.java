@@ -5,6 +5,7 @@ import channel.persistence.ChannelMemberRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micronaut.http.HttpRequest;
+import io.micronaut.scheduling.annotation.ExecuteOn;
 import io.micronaut.websocket.CloseReason;
 import io.micronaut.websocket.WebSocketSession;
 import io.micronaut.websocket.annotation.*;
@@ -22,6 +23,7 @@ import org.slf4j.LoggerFactory;
 import util.HeaderUserIdExtractor;
 import util.exception.MessagePersistenceException;
 
+@ExecuteOn("message-processor")
 @ServerWebSocket("/chat")
 public class MessagingServer {
 
@@ -99,38 +101,45 @@ public class MessagingServer {
       return;
     }
 
+    // Parse and validate message synchronously (fast, no IO)
+    IncomingMessage incomingMessage;
     try {
-      // Parse incoming message JSON
-      IncomingMessage incomingMessage = objectMapper.readValue(message, IncomingMessage.class);
+      incomingMessage = objectMapper.readValue(message, IncomingMessage.class);
+    } catch (JsonProcessingException e) {
+      LOG.error("Failed to parse message JSON from user {}: {}", userId, message, e);
+      sendErrorResponse(
+          session,
+          "Invalid message format. Expected JSON: {\"channelId\":\"<uuid>\",\"text\":\"<message>\"}");
+      return;
+    }
 
-      // Validate required fields
-      if (incomingMessage.channelId() == null) {
-        sendErrorResponse(
-            session,
-            "Invalid message format. Expected JSON: {\"channelId\":\"<uuid>\",\"text\":\"<message>\"}");
-        return;
-      }
-      if (incomingMessage.text() == null || incomingMessage.text().isBlank()) {
-        sendErrorResponse(session, "Message text cannot be empty");
-        return;
-      }
+    if (incomingMessage.channelId() == null) {
+      sendErrorResponse(
+          session,
+          "Invalid message format. Expected JSON: {\"channelId\":\"<uuid>\",\"text\":\"<message>\"}");
+      return;
+    }
+    if (incomingMessage.text() == null || incomingMessage.text().isBlank()) {
+      sendErrorResponse(session, "Message text cannot be empty");
+      return;
+    }
 
-      UUID channelId = incomingMessage.channelId();
-      UUID senderUserId = UUID.fromString(userId);
+    UUID channelId = incomingMessage.channelId();
+    UUID senderUserId = UUID.fromString(userId);
+    String text = incomingMessage.text();
 
-      // Check if sender is a member of the channel
-      // TODO: Cache membership lookups in Redis when implementing multi-instance support
-      if (!channelMemberRepository.existsByIdChannelIdAndIdUserId(channelId, senderUserId)) {
-        LOG.warn(
-            "User {} attempted to send message to channel {} but is not a member",
-            userId,
-            channelId);
-        sendErrorResponse(session, "You are not a member of this channel");
-        return;
-      }
+    // Check if sender is a member of the channel
+    // TODO: Cache membership lookups in Redis when implementing multi-instance support
+    if (!channelMemberRepository.existsByIdChannelIdAndIdUserId(channelId, senderUserId)) {
+      LOG.warn(
+          "User {} attempted to send message to channel {} but is not a member", userId, channelId);
+      sendErrorResponse(session, "You are not a member of this channel");
+      return;
+    }
 
+    try {
       // Create and persist message to database
-      Message messageToSave = Message.create(channelId, senderUserId, incomingMessage.text());
+      Message messageToSave = Message.create(channelId, senderUserId, text);
       Message savedMessage = messageService.saveMessage(messageToSave);
 
       LOG.info(
@@ -153,16 +162,14 @@ public class MessagingServer {
           objectMapper.writeValueAsString(BroadcastMessage.fromMessage(savedMessage));
       userConnRegistry.broadcastPayloadToTargets(broadcastPayload, memberUserIds);
 
-    } catch (JsonProcessingException e) {
-      LOG.error("Failed to parse message JSON from user {}: {}", userId, message, e);
-      sendErrorResponse(
-          session,
-          "Invalid message format. Expected JSON: {\"channelId\":\"<uuid>\",\"text\":\"<message>\"}");
     } catch (MessagePersistenceException e) {
       // Error already logged by MessageService with full context
       sendErrorResponse(session, "Failed to send message. Please try again.");
+    } catch (JsonProcessingException e) {
+      LOG.error("Failed to serialize broadcast message for user {}", userId, e);
+      sendErrorResponse(session, "Failed to send message. Please try again.");
     } catch (Exception e) {
-      LOG.error("Unexpected error processing message from user {}: {}", userId, message, e);
+      LOG.error("Unexpected error processing message from user {}: {}", userId, e.getMessage(), e);
       sendErrorResponse(session, "Failed to send message. Please try again.");
     }
   }

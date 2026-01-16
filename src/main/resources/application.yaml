@@ -5,6 +5,10 @@ micronaut:
     netty:
       websocket:
         max-frame-payload-length: 4096  # 4KB - rejects oversized frames at network layer
+  executors:
+    message-processor:
+      type: fixed
+      n-threads: 10
 
 endpoints:
   all:
