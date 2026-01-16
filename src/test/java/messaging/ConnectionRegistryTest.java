@@ -164,4 +164,119 @@ class ConnectionRegistryTest {
 
     verify(alice, times(1)).sendAsync("p");
   }
+
+  @Test
+  void cleanup_doesNotEvictOpenSessions() {
+    ConnectionRegistry registry = new ConnectionRegistry();
+    WebSocketSession alice = mock(WebSocketSession.class);
+    when(alice.isOpen()).thenReturn(true);
+    registry.registerUserSession("alice", alice);
+
+    // Run cleanup twice
+    registry.cleanupClosedSessions();
+    registry.cleanupClosedSessions();
+
+    assertEquals(1, registry.getRegisteredSessionCount());
+    assertEquals(1, registry.getActiveSessionCount());
+  }
+
+  @Test
+  void cleanup_doesNotEvictClosedSessionOnFirstCycle() {
+    ConnectionRegistry registry = new ConnectionRegistry();
+    WebSocketSession alice = mock(WebSocketSession.class);
+    when(alice.isOpen()).thenReturn(false);
+    when(alice.getId()).thenReturn("alice-session");
+    registry.registerUserSession("alice", alice);
+
+    // First cleanup - should record but not evict
+    registry.cleanupClosedSessions();
+
+    assertEquals(1, registry.getRegisteredSessionCount());
+  }
+
+  @Test
+  void cleanup_evictsClosedSessionAfterTwoCycles() {
+    ConnectionRegistry registry = new ConnectionRegistry();
+    WebSocketSession alice = mock(WebSocketSession.class);
+    when(alice.isOpen()).thenReturn(false);
+    when(alice.getId()).thenReturn("alice-session");
+    registry.registerUserSession("alice", alice);
+
+    // First cleanup - records the closed session
+    registry.cleanupClosedSessions();
+    assertEquals(1, registry.getRegisteredSessionCount());
+
+    // Second cleanup - should evict
+    registry.cleanupClosedSessions();
+    assertEquals(0, registry.getRegisteredSessionCount());
+  }
+
+  @Test
+  void cleanup_doesNotEvictWhenUserReconnectsWithNewSession() {
+    ConnectionRegistry registry = new ConnectionRegistry();
+
+    // Alice connects with session1, which closes
+    WebSocketSession session1 = mock(WebSocketSession.class);
+    when(session1.isOpen()).thenReturn(false);
+    when(session1.getId()).thenReturn("session-1");
+    registry.registerUserSession("alice", session1);
+
+    // First cleanup - records session1 as closed
+    registry.cleanupClosedSessions();
+    assertEquals(1, registry.getRegisteredSessionCount());
+
+    // Alice reconnects with session2, which also closes before next cleanup
+    WebSocketSession session2 = mock(WebSocketSession.class);
+    when(session2.isOpen()).thenReturn(false);
+    when(session2.getId()).thenReturn("session-2");
+    registry.registerUserSession("alice", session2);
+
+    // Second cleanup - should NOT evict because it's a different session
+    registry.cleanupClosedSessions();
+    assertEquals(1, registry.getRegisteredSessionCount());
+
+    // Third cleanup - NOW it should evict session2
+    registry.cleanupClosedSessions();
+    assertEquals(0, registry.getRegisteredSessionCount());
+  }
+
+  @Test
+  void cleanup_handlesOnCloseRemovingSessionBetweenCycles() {
+    ConnectionRegistry registry = new ConnectionRegistry();
+    WebSocketSession alice = mock(WebSocketSession.class);
+    when(alice.isOpen()).thenReturn(false);
+    when(alice.getId()).thenReturn("alice-session");
+    registry.registerUserSession("alice", alice);
+
+    // First cleanup - records the closed session
+    registry.cleanupClosedSessions();
+    assertEquals(1, registry.getRegisteredSessionCount());
+
+    // Simulate @OnClose firing and removing the session
+    registry.removeUserSession("alice", alice);
+    assertEquals(0, registry.getRegisteredSessionCount());
+
+    // Second cleanup - nothing to evict
+    registry.cleanupClosedSessions();
+    assertEquals(0, registry.getRegisteredSessionCount());
+  }
+
+  @Test
+  void getActiveSessionCount_returnsOnlyOpenSessions() {
+    ConnectionRegistry registry = new ConnectionRegistry();
+
+    WebSocketSession open1 = mock(WebSocketSession.class);
+    when(open1.isOpen()).thenReturn(true);
+    WebSocketSession open2 = mock(WebSocketSession.class);
+    when(open2.isOpen()).thenReturn(true);
+    WebSocketSession closed = mock(WebSocketSession.class);
+    when(closed.isOpen()).thenReturn(false);
+
+    registry.registerUserSession("alice", open1);
+    registry.registerUserSession("bob", open2);
+    registry.registerUserSession("carol", closed);
+
+    assertEquals(3, registry.getRegisteredSessionCount());
+    assertEquals(2, registry.getActiveSessionCount());
+  }
 }
