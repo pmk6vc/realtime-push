@@ -156,10 +156,11 @@ docker build -t realtime-envoy:it -f envoy/envoy.dockerfile envoy
 ## Important Implementation Notes
 
 - **Single connection per user**: `ConnectionRegistry` automatically closes previous session when user reconnects
-- **Message persistence**: Currently messages are NOT persisted to database (see TODO in `MessagingServer.onSessionMessage`)
+- **Message persistence**: Messages are persisted to Citus via `MessageService` with `@Transactional` support
 - **Broadcast scope**: Current implementation only broadcasts to users connected to same app instance; Kafka fanout is planned
 - **Citus primary keys**: Must include distribution column (e.g., messages PK includes `channel_id`)
 - **Integration test parallelism**: Disabled (`maxParallelForks = 1`) to prevent port conflicts with Docker containers
+- **Session cleanup**: `ConnectionRegistry` has defensive cleanup via `@Scheduled` that evicts stale sessions after two consecutive cycles (in case `@OnClose` fails to fire)
 
 ## Implementation TODO List
 
@@ -173,9 +174,11 @@ This section tracks remaining work to achieve production-ready distributed messa
 - Citus distributed database with proper schema (messages distributed by channel_id)
 - Single-instance message broadcasting
 - Comprehensive integration test infrastructure
+- Message persistence to Citus with transactional support
+- Channel membership enforcement (only members can send/receive)
+- Proper JSON serialization with Jackson ObjectMapper
 
 **❌ Critical Gaps:**
-- Messages NOT persisted to database
 - No Kafka integration (messages don't reach users on other instances)
 - No session failover/redistribution on instance failure
 - No message ordering or durability guarantees across instances
@@ -184,15 +187,14 @@ This section tracks remaining work to achieve production-ready distributed messa
 
 These items are **required** for multi-instance message delivery to work correctly:
 
-1. **Message Persistence Layer**
-   - [ ] Add Micronaut Data JDBC dependency to `build.gradle.kts`
-   - [ ] Create `Message` entity class mapping to `messages` table
-   - [ ] Create `MessageRepository` interface with `@JdbcRepository`
-   - [ ] Inject repository into `MessagingServer`
-   - [ ] Implement database insert in `onSessionMessage()` before broadcasting
-   - [ ] Handle database errors and return error response to sender
-   - [ ] Add unit tests for repository
-   - [ ] Add integration test verifying messages written to Citus
+1. **Message Persistence Layer** ✅ COMPLETED
+   - [x] Added Micronaut Data JDBC dependency to `build.gradle.kts`
+   - [x] Created `Message` entity record mapping to `messages` table
+   - [x] Created `MessageRepository` interface with `@JdbcRepository`
+   - [x] Created `MessageService` with `@Transactional` wrapping repository
+   - [x] Implemented database insert in `onSessionMessage()` before broadcasting
+   - [x] Handle database errors via `MessagePersistenceException` and return error response to sender
+   - [x] Added integration tests verifying messages written to Citus
 
 2. **Kafka Producer Integration**
    - [ ] Add Kafka client dependencies to `build.gradle.kts` (kafka-clients, micronaut-kafka)
@@ -320,12 +322,12 @@ These items are **required** for multi-instance message delivery to work correct
     - [ ] Add authentication check (user must be member of channel)
     - [ ] Add integration test for message history retrieval
 
-18. **Channel Membership Management**
-    - [ ] Create `channel_members` table (distributed by channel_id)
-    - [ ] Create REST endpoints: join channel, leave channel, list members
-    - [ ] Enforce authorization: only members can send/receive messages in channel
-    - [ ] Broadcast membership changes to connected users
-    - [ ] Add integration tests for membership operations
+18. **Channel Membership Management** ✅ COMPLETED
+    - [x] Created `channel_members` reference table with composite primary key (channel_id, user_id)
+    - [x] Created `Channel` entity with owner_user_id for ownership tracking
+    - [x] Created REST endpoints: create/update/delete channels, add/remove members, list members, leave channel
+    - [x] Enforced authorization: only members can send/receive messages in channel
+    - [x] Added comprehensive E2E integration tests for membership operations
 
 19. **Kubernetes Deployment Manifests**
     - [ ] Create `k8s/` directory with manifests
@@ -382,38 +384,35 @@ This section tracks code quality improvements identified during code review (202
 
 ### 🚨 CRITICAL - Security & Correctness
 
-**CR-1: Replace Manual JSON Serialization** (`MessagingServer.java:51-57, 135-147, 115-117`)
-- [ ] Create POJO classes for all message types (AckMessage, BroadcastMessage, ErrorMessage)
-- [ ] Inject ObjectMapper into MessagingServer
-- [ ] Replace all manual JSON string concatenation with `objectMapper.writeValueAsString()`
-- [ ] Remove manual `escapeJson()` method (line 149-154)
-- [ ] Add unit tests verifying proper escaping of special characters
-- **Risk**: Current escaping incomplete - missing Unicode control characters, tabs, etc.
-- **Impact**: Potential injection vulnerability
+**CR-1: Replace Manual JSON Serialization** ✅ COMPLETED
+- [x] Created POJO classes in `messaging/message/` subpackage: `MessageType` enum, `AckMessage`, `BroadcastMessage`, `ErrorMessage` records
+- [x] Injected ObjectMapper into MessagingServer
+- [x] Replaced all manual JSON string concatenation with `objectMapper.writeValueAsString()`
+- [x] Removed manual `escapeJson()` method
+- [x] Added `MessageSerializationTest` with 12 tests verifying proper escaping of special characters, emoji, unicode
 
 **CR-2: Add Input Validation and Rate Limiting** (`MessagingServer.java:72-113`)
 - [ ] Add max message size validation (4KB recommended)
 - [ ] Implement rate limiter per user (10 messages/second recommended)
 - [ ] Use Guava LoadingCache or similar for rate tracking
-- [ ] Add channel membership validation before allowing message send
-- [ ] Create `ChannelRepository` with `isMember(channelId, userId)` method
+- [x] ~~Add channel membership validation before allowing message send~~ (done in Phase 4/5)
+- [x] ~~Create `ChannelRepository` with `isMember(channelId, userId)` method~~ (done via `ChannelMemberRepository.existsByIdChannelIdAndIdUserId`)
 - [ ] Return appropriate error codes for each validation failure
 - **Risk**: No abuse prevention - single user can spam unlimited messages
 
-**CR-3: Fix Transaction Boundary** (`MessageRepository.java:18-34`)
-- [ ] Add `@Transactional` annotation to `insert()` method
-- [ ] Create custom `DatabaseException` extending RuntimeException
-- [ ] Include context in exception message (channelId, messageId)
-- [ ] Add retry logic with `@Retryable` for transient failures
-- [ ] Distinguish between retriable (connection) and non-retriable (constraint violation) errors
-- **Risk**: No transaction management for future outbox pattern implementation
+**CR-3: Fix Transaction Boundary** ✅ COMPLETED
+- [x] Created `MessageService` with `@Transactional` annotation wrapping `MessageRepository`
+- [x] Created `MessagePersistenceException` with context (channelId, messageId)
+- [x] Updated `MessagingServer` to use `MessageService` instead of direct repository access
+- [x] Added `MockMessageService` for tests to bypass `@Transactional` requirements
+- Note: Retry logic deferred to CR-10 (circuit breaker implementation)
 
 ### ⚠️ HIGH PRIORITY - Observability & Resilience
 
 **CR-4: Implement Comprehensive Health Checks**
 - [ ] Create `HealthController` with `/health` endpoint
 - [ ] Add database connectivity check using `Connection.isValid(2)`
-- [ ] Add method to `ConnectionRegistry`: `getActiveConnectionCount()`
+- [x] ~~Add method to `ConnectionRegistry`: `getActiveConnectionCount()`~~ (done in CR-7 as `getActiveSessionCount()`)
 - [ ] Return HTTP 200 if healthy, 503 if unhealthy
 - [ ] Configure Envoy health checks to use this endpoint
 - [ ] Add Kubernetes liveness and readiness probes in deployment manifests
@@ -436,13 +435,13 @@ This section tracks code quality improvements identified during code review (202
 - [ ] Document all configuration options in CLAUDE.md
 - **Gap**: Magic numbers hardcoded throughout codebase
 
-**CR-7: Fix Potential Memory Leak** (`ConnectionRegistry.java:33-54`)
-- [ ] Add `ScheduledExecutorService` to ConnectionRegistry
-- [ ] Create cleanup task: `userSessionMap.entrySet().removeIf(entry -> !entry.getValue().isOpen())`
-- [ ] Schedule cleanup every 60 seconds using `@PostConstruct`
-- [ ] Add `@PreDestroy` to shutdown executor gracefully
-- [ ] Add debug logging showing active session count after cleanup
-- **Risk**: Closed sessions remain in map indefinitely
+**CR-7: Fix Potential Memory Leak** ✅ COMPLETED
+- [x] Added `@Scheduled` cleanup task in `ConnectionRegistry` (configurable via `connection-registry.cleanup-interval`, default 60s)
+- [x] Implemented two-cycle detection: only evicts sessions that remain closed across consecutive cleanup cycles
+- [x] Tracks session objects (not just userId) to avoid false positives when users reconnect
+- [x] Added WARN-level logging when cleanup evicts stale sessions (indicates potential framework bug)
+- [x] Added `getActiveSessionCount()` and `getRegisteredSessionCount()` methods
+- [x] Added 6 unit tests for cleanup behavior in `ConnectionRegistryTest`
 
 ### 📋 MEDIUM PRIORITY - Code Quality
 
@@ -570,15 +569,15 @@ This section tracks code quality improvements identified during code review (202
 ### Implementation Priority
 
 **Week 1** (Security & Critical Bugs):
-- CR-1: Replace JSON serialization
+- ✅ CR-1: Replace JSON serialization
 - CR-2: Add rate limiting
-- CR-3: Fix transaction boundary
+- ✅ CR-3: Fix transaction boundary
 - CR-4: Add health checks
 
 **Week 2** (Observability):
 - CR-5: Add metrics
 - CR-6: Externalize config
-- CR-7: Fix memory leak
+- ✅ CR-7: Fix memory leak
 - CR-8: Structured logging
 
 **Week 3** (Resilience):
