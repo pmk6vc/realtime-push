@@ -139,6 +139,13 @@ static_resources:
                     socket_address:
                       address: ${UPSTREAM_HOST}
                       port_value: ${UPSTREAM_PORT}
+      health_checks:
+        - timeout: 2s
+          interval: 5s
+          unhealthy_threshold: 3
+          healthy_threshold: 2
+          http_health_check:
+            path: /health
 
     # Cluster used for normal HTTP (stateless, simple LB)
     - name: messaging_http_cluster
@@ -154,6 +161,13 @@ static_resources:
                     socket_address:
                       address: ${UPSTREAM_HOST}
                       port_value: ${UPSTREAM_PORT}
+      health_checks:
+        - timeout: 2s
+          interval: 5s
+          unhealthy_threshold: 3
+          healthy_threshold: 2
+          http_health_check:
+            path: /health
 
     # Cluster used for fetching JWKS (Keycloak public keys)
     - name: keycloak_jwks
