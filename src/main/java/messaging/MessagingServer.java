@@ -13,6 +13,9 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import messaging.message.AckMessage;
+import messaging.message.BroadcastMessage;
+import messaging.message.ErrorMessage;
 import messaging.persistence.Message;
 import messaging.persistence.MessageRepository;
 import org.slf4j.Logger;
@@ -57,13 +60,13 @@ public class MessagingServer {
     String userId = userIdOpt.get();
     session.put(ATTR_USER_ID, userId);
     userConnRegistry.registerUserSession(userId, session);
-    String ackPayload =
-        "{\"type\":\"ack\",\"userId\":\""
-            + userId
-            + "\",\"sessionId\":\""
-            + session.getId()
-            + "\"}";
-    session.sendAsync(ackPayload);
+    try {
+      String ackPayload =
+          objectMapper.writeValueAsString(AckMessage.create(userId, session.getId()));
+      session.sendAsync(ackPayload);
+    } catch (JsonProcessingException e) {
+      LOG.error("Failed to serialize ack message for userId {}", userId, e);
+    }
     LOG.info("WebSocket opened for userId {}: {}", userId, session.getId());
   }
 
@@ -147,7 +150,8 @@ public class MessagingServer {
 
       // TODO: Write to outbox table for Kafka fanout (Phase 1, item 3)
       // For now, broadcast locally to channel members on this server instance
-      String broadcastPayload = buildBroadcastPayload(savedMessage);
+      String broadcastPayload =
+          objectMapper.writeValueAsString(BroadcastMessage.fromMessage(savedMessage));
       userConnRegistry.broadcastPayloadToTargets(broadcastPayload, memberUserIds);
 
     } catch (JsonProcessingException e) {
@@ -162,8 +166,12 @@ public class MessagingServer {
   }
 
   private void sendErrorResponse(WebSocketSession session, String errorMessage) {
-    String errorPayload = "{\"type\":\"error\",\"message\":\"" + escapeJson(errorMessage) + "\"}";
-    session.sendAsync(errorPayload);
+    try {
+      String errorPayload = objectMapper.writeValueAsString(ErrorMessage.create(errorMessage));
+      session.sendAsync(errorPayload);
+    } catch (JsonProcessingException e) {
+      LOG.error("Failed to serialize error message: {}", errorMessage, e);
+    }
   }
 
   @OnError
@@ -179,26 +187,5 @@ public class MessagingServer {
     // TODO: Add Kafka subscription
     // TODO: Fetch relevant channel members from Redis, exclude sender, and broadcast payload to
     // targets
-  }
-
-  private String buildBroadcastPayload(Message message) {
-    return "{\"type\":\"message\",\"messageId\":\""
-        + message.messageId()
-        + "\",\"channelId\":\""
-        + message.channelId()
-        + "\",\"from\":\""
-        + message.senderUserId()
-        + "\",\"sentAt\":\""
-        + message.sentAt()
-        + "\",\"text\":\""
-        + escapeJson(message.body())
-        + "\"}";
-  }
-
-  private String escapeJson(String text) {
-    return text.replace("\\", "\\\\")
-        .replace("\"", "\\\"")
-        .replace("\n", "\\n")
-        .replace("\r", "\\r");
   }
 }
