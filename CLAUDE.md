@@ -391,14 +391,21 @@ This section tracks code quality improvements identified during code review (202
 - [x] Removed manual `escapeJson()` method
 - [x] Added `MessageSerializationTest` with 12 tests verifying proper escaping of special characters, emoji, unicode
 
-**CR-2: Add Input Validation and Rate Limiting** (`MessagingServer.java:72-113`)
-- [ ] Add max message size validation (4KB recommended)
-- [ ] Implement rate limiter per user (10 messages/second recommended)
-- [ ] Use Guava LoadingCache or similar for rate tracking
+**CR-2: Add Input Validation and Rate Limiting** ✅ COMPLETED
+- [x] Max message size validation: Configured Netty `max-frame-payload-length: 4096` (4KB) - rejects oversized frames at network layer
+- [x] Rate limiter per user: Implemented with Bucket4j (10 msg/sec configurable via `messaging.rate-limit.messages-per-second`)
+- [x] Rate limit bucket cache: Uses Caffeine with 5-minute TTL to prevent memory leaks
+- [x] WebSocket threading: Added `@ExecuteOn("message-processor")` - handlers run on dedicated 10-thread pool, not Netty event loop
+- [x] Database query timeout: Added `statement_timeout: 5s` to prevent hung queries
 - [x] ~~Add channel membership validation before allowing message send~~ (done in Phase 4/5)
 - [x] ~~Create `ChannelRepository` with `isMember(channelId, userId)` method~~ (done via `ChannelMemberRepository.existsByIdChannelIdAndIdUserId`)
-- [ ] Return appropriate error codes for each validation failure
-- **Risk**: No abuse prevention - single user can spam unlimited messages
+- [ ] **Deferred**: Envoy HTTP endpoint rate limiting (requires external rate limit service for per-user limits)
+
+**New files:**
+- `messaging/ratelimit/RateLimitConfig.java` - Configuration properties
+- `messaging/ratelimit/RateLimitService.java` - Per-user token bucket with Caffeine cache
+- `messaging/ratelimit/RateLimitServiceTest.java` - Unit tests
+- `e2e/RateLimitE2ETest.java` - E2E tests
 
 **CR-3: Fix Transaction Boundary** ✅ COMPLETED
 - [x] Created `MessageService` with `@Transactional` annotation wrapping `MessageRepository`
@@ -570,7 +577,7 @@ This section tracks code quality improvements identified during code review (202
 
 **Week 1** (Security & Critical Bugs):
 - ✅ CR-1: Replace JSON serialization
-- CR-2: Add rate limiting
+- ✅ CR-2: Add rate limiting
 - ✅ CR-3: Fix transaction boundary
 - CR-4: Add health checks
 
