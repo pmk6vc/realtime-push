@@ -17,10 +17,10 @@ import messaging.message.AckMessage;
 import messaging.message.BroadcastMessage;
 import messaging.message.ErrorMessage;
 import messaging.persistence.Message;
-import messaging.persistence.MessageRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import util.HeaderUserIdExtractor;
+import util.exception.MessagePersistenceException;
 
 @ServerWebSocket("/chat")
 public class MessagingServer {
@@ -28,7 +28,7 @@ public class MessagingServer {
   private static final String ATTR_USER_ID = "userId";
   private final ConnectionRegistry userConnRegistry;
   private final HeaderUserIdExtractor headerUserIdExtractor;
-  private final MessageRepository messageRepository;
+  private final MessageService messageService;
   private final ChannelMemberRepository channelMemberRepository;
   private final ObjectMapper objectMapper;
   private static final Logger LOG = LoggerFactory.getLogger(MessagingServer.class);
@@ -36,12 +36,12 @@ public class MessagingServer {
   public MessagingServer(
       ConnectionRegistry userConnRegistry,
       HeaderUserIdExtractor headerUserIdExtractor,
-      MessageRepository messageRepository,
+      MessageService messageService,
       ChannelMemberRepository channelMemberRepository,
       ObjectMapper objectMapper) {
     this.userConnRegistry = userConnRegistry;
     this.headerUserIdExtractor = headerUserIdExtractor;
-    this.messageRepository = messageRepository;
+    this.messageService = messageService;
     this.channelMemberRepository = channelMemberRepository;
     this.objectMapper = objectMapper;
   }
@@ -131,7 +131,7 @@ public class MessagingServer {
 
       // Create and persist message to database
       Message messageToSave = Message.create(channelId, senderUserId, incomingMessage.text());
-      Message savedMessage = messageRepository.save(messageToSave);
+      Message savedMessage = messageService.saveMessage(messageToSave);
 
       LOG.info(
           "Persisted message {} to channel {} from user {}",
@@ -148,7 +148,6 @@ public class MessagingServer {
               .filter(memberId -> !memberId.equals(userId)) // Exclude sender
               .collect(Collectors.toSet());
 
-      // TODO: Write to outbox table for Kafka fanout (Phase 1, item 3)
       // For now, broadcast locally to channel members on this server instance
       String broadcastPayload =
           objectMapper.writeValueAsString(BroadcastMessage.fromMessage(savedMessage));
@@ -159,8 +158,11 @@ public class MessagingServer {
       sendErrorResponse(
           session,
           "Invalid message format. Expected JSON: {\"channelId\":\"<uuid>\",\"text\":\"<message>\"}");
+    } catch (MessagePersistenceException e) {
+      // Error already logged by MessageService with full context
+      sendErrorResponse(session, "Failed to send message. Please try again.");
     } catch (Exception e) {
-      LOG.error("Failed to persist message from user {}: {}", userId, message, e);
+      LOG.error("Unexpected error processing message from user {}: {}", userId, message, e);
       sendErrorResponse(session, "Failed to send message. Please try again.");
     }
   }
