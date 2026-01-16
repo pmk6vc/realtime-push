@@ -416,14 +416,18 @@ This section tracks code quality improvements identified during code review (202
 
 ### ⚠️ HIGH PRIORITY - Observability & Resilience
 
-**CR-4: Implement Comprehensive Health Checks**
-- [ ] Create `HealthController` with `/health` endpoint
-- [ ] Add database connectivity check using `Connection.isValid(2)`
+**CR-4: Implement Comprehensive Health Checks** ✅ COMPLETED
+- [x] `/health` endpoint exists (Micronaut built-in)
+- [x] Database connectivity via Micronaut's `JdbcIndicator` (auto-enabled with datasource)
 - [x] ~~Add method to `ConnectionRegistry`: `getActiveConnectionCount()`~~ (done in CR-7 as `getActiveSessionCount()`)
-- [ ] Return HTTP 200 if healthy, 503 if unhealthy
-- [ ] Configure Envoy health checks to use this endpoint
-- [ ] Add Kubernetes liveness and readiness probes in deployment manifests
-- **Gap**: Current `/health` doesn't verify database connectivity
+- [x] Returns HTTP 200 when healthy, 503 when unhealthy
+- [x] Configured Envoy health checks for upstream clusters
+- [ ] Add Kubernetes liveness and readiness probes in deployment manifests (deferred to K8s deployment)
+
+**Changes:**
+- `application.yaml`: Set `details-visible: NEVER` - only exposes `{"status":"UP"}`, no internal details (DB URLs, thread info)
+- `envoy/envoy.template.yaml`: Added health checks to `messaging_ws_cluster` and `messaging_http_cluster` (5s interval, 3 failure threshold)
+- `e2e/HealthCheckE2ETest.java`: Tests for health endpoint (healthy response, no-auth access, failure detection)
 
 **CR-5: Add Metrics and Monitoring** (`MessagingServer.java`)
 - [ ] Add Micrometer dependencies: `micronaut-micrometer-core`, `micronaut-micrometer-registry-prometheus`
@@ -579,7 +583,7 @@ This section tracks code quality improvements identified during code review (202
 - ✅ CR-1: Replace JSON serialization
 - ✅ CR-2: Add rate limiting
 - ✅ CR-3: Fix transaction boundary
-- CR-4: Add health checks
+- ✅ CR-4: Add health checks
 
 **Week 2** (Observability):
 - CR-5: Add metrics

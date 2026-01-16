@@ -20,6 +20,9 @@ endpoints:
   health:
     enabled: true
     sensitive: false
+    # NEVER: Only returns {"status":"UP"} - no internal details exposed
+    # Envoy health checks only need HTTP 200 vs 503, not the JSON body
+    details-visible: NEVER
 
 logger:
   levels:
