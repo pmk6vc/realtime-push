@@ -1,3 +1,7 @@
+messaging:
+  rate-limit:
+    messages-per-second: 10
+
 micronaut:
   application:
     name: realtime-messaging
