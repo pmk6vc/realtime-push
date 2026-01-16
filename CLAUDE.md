@@ -425,7 +425,7 @@ This section tracks code quality improvements identified during code review (202
 - [ ] Add Kubernetes liveness and readiness probes in deployment manifests (deferred to K8s deployment)
 
 **Changes:**
-- `application.yaml`: Added `details-visible: ANONYMOUS` to expose health details without auth
+- `application.yaml`: Set `details-visible: NEVER` - only exposes `{"status":"UP"}`, no internal details (DB URLs, thread info)
 - `envoy/envoy.template.yaml`: Added health checks to `messaging_ws_cluster` and `messaging_http_cluster` (5s interval, 3 failure threshold)
 - `e2e/HealthCheckE2ETest.java`: Tests for health endpoint (healthy response, no-auth access, failure detection)
 

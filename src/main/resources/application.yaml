@@ -17,13 +17,12 @@ micronaut:
 endpoints:
   all:
     enabled: true
-  # TODO: In production, /health should not be publicly exposed. Configure Envoy to:
-  #   1. Allow internal health checks (from Envoy itself) without exposing to internet
-  #   2. Expose only to admins via separate internal-only route or network policy
   health:
     enabled: true
     sensitive: false
-    details-visible: ANONYMOUS
+    # NEVER: Only returns {"status":"UP"} - no internal details exposed
+    # Envoy health checks only need HTTP 200 vs 503, not the JSON body
+    details-visible: NEVER
 
 logger:
   levels:

@@ -21,8 +21,7 @@ import testutils.IntegrationInfraExtension;
 public class HealthCheckE2ETest {
 
   @Test
-  void healthEndpoint_returnsOkWithDatabaseStatus(IntegrationInfraExtension.Infra infra)
-      throws Exception {
+  void healthEndpoint_returnsOkWhenHealthy(IntegrationInfraExtension.Infra infra) throws Exception {
     Request request = new Request.Builder().url(infra.envoyBaseUrl() + "/health").get().build();
 
     try (Response response = infra.http().newCall(request).execute()) {
@@ -31,12 +30,8 @@ public class HealthCheckE2ETest {
       String body = response.body().string();
       JsonNode json = infra.mapper().readTree(body);
 
+      // Only status is exposed (details-visible: NEVER for security)
       assertEquals("UP", json.get("status").asText(), "Overall status should be UP");
-      assertTrue(json.has("details"), "Response should include details");
-
-      JsonNode details = json.get("details");
-      assertTrue(details.has("jdbc"), "Details should include jdbc health indicator");
-      assertEquals("UP", details.get("jdbc").get("status").asText(), "JDBC status should be UP");
     }
   }
 
