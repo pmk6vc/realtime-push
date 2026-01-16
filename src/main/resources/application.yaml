@@ -1,6 +1,10 @@
 micronaut:
   application:
     name: realtime-messaging
+  server:
+    netty:
+      websocket:
+        max-frame-payload-length: 4096  # 4KB - rejects oversized frames at network layer
 
 endpoints:
   all:
