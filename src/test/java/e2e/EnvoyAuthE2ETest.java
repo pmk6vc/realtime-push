@@ -17,9 +17,9 @@ public class EnvoyAuthE2ETest {
 
   private record ResponseRecord(int code, String body, String contentType) {}
 
-  private static ResponseRecord callHello(
+  private static ResponseRecord callUsersMe(
       IntegrationInfraExtension.Infra infra, Consumer<Request.Builder> mut) throws Exception {
-    Request.Builder b = new Request.Builder().url(infra.envoyBaseUrl() + "/").get();
+    Request.Builder b = new Request.Builder().url(infra.envoyBaseUrl() + "/users/me").get();
     mut.accept(b);
     try (Response r = infra.http().newCall(b.build()).execute()) {
       return new ResponseRecord(
@@ -29,21 +29,21 @@ public class EnvoyAuthE2ETest {
 
   @Test
   void missingTokenYields401(IntegrationInfraExtension.Infra infra) throws Exception {
-    ResponseRecord rb = callHello(infra, b -> {});
+    ResponseRecord rb = callUsersMe(infra, b -> {});
     assertEquals(401, rb.code);
   }
 
   @Test
   void malformedAuthorizationHeaderYields401(IntegrationInfraExtension.Infra infra)
       throws Exception {
-    ResponseRecord rb = callHello(infra, b -> b.header("Authorization", "NotBearer abc.def.ghi"));
+    ResponseRecord rb = callUsersMe(infra, b -> b.header("Authorization", "NotBearer abc.def.ghi"));
     assertEquals(401, rb.code);
   }
 
   @Test
   void malformedJwtYields401(IntegrationInfraExtension.Infra infra) throws Exception {
     ResponseRecord rb =
-        callHello(infra, b -> b.header("Authorization", "Bearer definitely-not-a-jwt"));
+        callUsersMe(infra, b -> b.header("Authorization", "Bearer definitely-not-a-jwt"));
     assertEquals(401, rb.code);
   }
 
@@ -53,7 +53,7 @@ public class EnvoyAuthE2ETest {
     String token = infra.passwordGrant("alice", "alice!");
     String expectedSub = infra.userSub("alice");
     ResponseRecord rb =
-        callHello(
+        callUsersMe(
             infra,
             b -> {
               b.header("Authorization", "Bearer " + token);
@@ -69,10 +69,9 @@ public class EnvoyAuthE2ETest {
   void validJwtYields200AndUserIdInjected(IntegrationInfraExtension.Infra infra) throws Exception {
     String token = infra.passwordGrant("alice", "alice!");
     String expectedSub = infra.userSub("alice");
-    ResponseRecord rb = callHello(infra, b -> b.header("Authorization", "Bearer " + token));
+    ResponseRecord rb = callUsersMe(infra, b -> b.header("Authorization", "Bearer " + token));
     JsonNode jsonBody = infra.readJsonBody(rb.body);
     assertEquals(200, rb.code);
-    assertEquals("hello", jsonBody.get("message").asText());
     assertEquals(expectedSub, jsonBody.get("userId").asText());
   }
 }

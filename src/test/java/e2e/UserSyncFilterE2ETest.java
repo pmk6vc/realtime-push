@@ -40,7 +40,7 @@ public class UserSyncFilterE2ETest {
     // Make an authenticated request via Envoy (triggers UserSyncFilter)
     Request request =
         new Request.Builder()
-            .url(infra.envoyBaseUrl() + "/")
+            .url(infra.envoyBaseUrl() + "/users/me")
             .get()
             .header("Authorization", "Bearer " + token)
             .build();
@@ -70,7 +70,7 @@ public class UserSyncFilterE2ETest {
     for (int i = 0; i < 3; i++) {
       Request request =
           new Request.Builder()
-              .url(infra.envoyBaseUrl() + "/")
+              .url(infra.envoyBaseUrl() + "/users/me")
               .get()
               .header("Authorization", "Bearer " + token)
               .build();
@@ -88,7 +88,7 @@ public class UserSyncFilterE2ETest {
   void unauthenticatedRequest_proceedsWithoutError(IntegrationInfraExtension.Infra infra)
       throws Exception {
     // Request without Authorization header should proceed (and get 401 from Envoy)
-    Request request = new Request.Builder().url(infra.envoyBaseUrl() + "/").get().build();
+    Request request = new Request.Builder().url(infra.envoyBaseUrl() + "/users/me").get().build();
 
     try (Response response = infra.http().newCall(request).execute()) {
       // Should get 401 from Envoy (no auth) - not a 500 error from the filter
