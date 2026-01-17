@@ -24,6 +24,14 @@ public class UserController {
     this.userIdExtractor = userIdExtractor;
   }
 
+  /** Returns the authenticated user's ID (from X-User-Id header set by Envoy). */
+  @Get("/me")
+  @Produces(MediaType.APPLICATION_JSON)
+  public UserInfoResponse getCurrentUser(HttpRequest<?> httpRequest) {
+    UUID userId = extractUserId(httpRequest);
+    return new UserInfoResponse(userId.toString());
+  }
+
   /** Lists all channels the authenticated user is a member of. */
   @Get("/me/channels")
   @Produces(MediaType.APPLICATION_JSON)
